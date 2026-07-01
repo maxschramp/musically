@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File ./.github/hooks/lint-backend.ps1",
+        "timeout": 30
+      }
+    ]
+  }
+}

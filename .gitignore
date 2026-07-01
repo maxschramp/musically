@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+*.egg
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# beets
+*.db-journal
+
+# Downloads / music (large binary files)
+/music/
+/downloads/
+*.flac
+*.mp3
+
+# Qobuz credentials file
+qobuz_creds.json

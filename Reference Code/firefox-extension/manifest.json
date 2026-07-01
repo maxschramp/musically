@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Qobuz Downloader",
+  "version": "0.1.0",
+  "description": "Download the current Qobuz track to your Downloads folder.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "qobuz-downloader@maxschramp",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "downloads",
+    "storage",
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.qobuz.com/*",
+    "https://open.qobuz.com/*",
+    "https://play.qobuz.com/*",
+    "https://*.qobuz.com/*",
+    "https://*.qobuz.net/*",
+    "https://*.akamaized.net/*",
+    "https://*.cloudfront.net/*"
+  ],
+  "background": {
+    "scripts": ["md5.js", "tagger.js", "background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://play.qobuz.com/*"],
+      "js": ["content-qobuz.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Download this Qobuz track",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

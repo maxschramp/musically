@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest",
+        "--browser-url=http://localhost:9222"
+      ]
+    }
+  }
+}
