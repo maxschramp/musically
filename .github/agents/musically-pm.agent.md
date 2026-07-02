@@ -1,6 +1,6 @@
 ---
 description: "Musically project manager — plan, break down, and orchestrate work on the Musically self-hosted music library app. Use when: planning architecture, dividing work into tasks, delegating implementation to subagents, tracking progress against SPEC.md, or scoping out a new feature or component."
-tools: [read, search, agent, todo]
+tools: [read, search, agent, todo, execute]
 model: "DeepSeek V4 Pro"
 argument-hint: "What aspect of the Musically project do you want to plan or delegate?"
 user-invocable: true
@@ -49,6 +49,7 @@ Musically is a self-hosted Docker application (target: Unraid) that:
    - Use `musically-infra` for all Docker/Nginx/Unraid/deployment work.
    - Craft a self-contained prompt that includes all necessary context (spec excerpts, file paths, tech choices) so the subagent needs zero back-and-forth.
 6. **Track progress** — use the todo list to reflect completion state as subagents report back.
+7. **Remind subagents to commit** — after each subagent reports completion, remind it to commit its work before moving to the next task. Subagents (backend, frontend, infra) are configured to commit at logical boundaries with conventional commits.
 
 ## Output Format
 

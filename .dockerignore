@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+.venv/
+venv/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitattributes
+.github/
+
+# Docker
+docker-compose.override.yml
+data/downloads/
+data/postgres/
+data/redis/
+
+# Reference code (not needed in container builds)
+Reference Code/
+
+# Project docs (keep README.md for repo)
+*.md
+!README.md
+
+# Database files
+*.db
+*.db-journal
+
+# Music / large binary files
+*.flac
+*.mp3
+*.wav
+*.aiff
+*.m4a
+music/
+downloads/
+*.flac
+*.mp3
+*.wav
+*.aiff
+
+# Qobuz credentials file
+qobuz_creds.json
+
+# Reference code (not needed in images)
+Reference Code/
+
+# Documentation
+*.md
+!README.md
+SPEC.md
+
+# Notebooks
+*.ipynb

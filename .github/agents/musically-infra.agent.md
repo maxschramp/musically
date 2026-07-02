@@ -154,7 +154,31 @@ LOG_LEVEL=info
 2. Check what backend/frontend agents have already produced (if anything).
 3. Create Docker and config files that match the current state of the codebase.
 4. Test locally with `docker compose up` when possible.
-5. Report what was configured and what depends on other agents.
+5. **Commit your changes** (see Git Workflow below).
+6. Report what was configured and what depends on other agents.
+
+## Git Workflow
+
+After completing a self-contained piece of work (a Dockerfile, compose config, Nginx config, or Unraid template), you MUST commit it:
+
+1. **Stage only relevant files** — use `git add` with specific paths, never `git add -A`:
+   ```bash
+   git add docker-compose.yml nginx/default.conf
+   ```
+
+2. **Use conventional commits** with the `infra` scope:
+   - `feat(infra): add multi-stage Dockerfile for FastAPI + Celery worker`
+   - `fix(infra): correct volume mount paths for Unraid NAS`
+   - `chore(infra): pin Redis to 7.4-alpine`
+   - `docs(infra): add .env.example with all required variables`
+
+3. **Write meaningful messages** — explain WHAT changed and WHY. Keep the summary line under 72 characters.
+
+4. **Verify before committing** — validate configs (`docker compose config`). Never commit broken configs.
+
+5. **Do NOT push** — the user controls when to push to remote. Commit locally only.
+
+6. **Commit at logical boundaries** — one commit per service/config group. Not after every single file save.
 
 ## Output Format
 

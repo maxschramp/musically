@@ -1,0 +1,169 @@
+# =============================================================================
+# Musically — Production Docker Compose (Unraid target)
+# =============================================================================
+# Single image (ghcr.io/maxschramp/musically) used for all services.
+# The api service runs supervisord (nginx + uvicorn) in one container.
+#
+# Volumes use Unraid NAS paths (/mnt/user/music).
+# For local dev, use docker-compose.override.yml which overrides volumes,
+# ports, and adds hot-reload.
+#
+# Usage:
+#   cp .env.example .env
+#   # edit .env with your secrets
+#   docker compose up -d
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — nginx + FastAPI in one container (managed by supervisord)
+  # ---------------------------------------------------------------------------
+  api:
+    image: ghcr.io/maxschramp/musically:latest
+    container_name: musically
+    ports:
+      - "${APP_PORT:-8080}:80"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://musically:${DB_PASSWORD}@db:5432/musically
+      - REDIS_URL=redis://redis:6379/0
+      - MUSIC_DIR=/music
+      - DOWNLOADS_DIR=/downloads
+      - CONFIG_DIR=/config
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SECRET_KEY=${SECRET_KEY}
+      - QOBUZ_EMAIL=${QOBUZ_EMAIL}
+      - QOBUZ_PASSWORD=${QOBUZ_PASSWORD}
+      - LASTFM_API_KEY=${LASTFM_API_KEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET}
+      - LASTFM_USERNAME=${LASTFM_USERNAME}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    volumes:
+      - /mnt/user/music:/music           # NAS music share (FLAC library)
+      - ./data/downloads:/downloads      # Temp Qobuz download staging
+      - ./config:/config                 # beets config + app settings
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Celery Worker — background tasks (download, tag, watch folder)
+  # ---------------------------------------------------------------------------
+  worker:
+    image: ghcr.io/maxschramp/musically:latest
+    container_name: musically-worker
+    command: celery -A app.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://musically:${DB_PASSWORD}@db:5432/musically
+      - REDIS_URL=redis://redis:6379/0
+      - MUSIC_DIR=/music
+      - DOWNLOADS_DIR=/downloads
+      - CONFIG_DIR=/config
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SECRET_KEY=${SECRET_KEY}
+      - QOBUZ_EMAIL=${QOBUZ_EMAIL}
+      - QOBUZ_PASSWORD=${QOBUZ_PASSWORD}
+      - LASTFM_API_KEY=${LASTFM_API_KEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET}
+      - LASTFM_USERNAME=${LASTFM_USERNAME}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    volumes:
+      - /mnt/user/music:/music
+      - ./data/downloads:/downloads
+      - ./config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Celery Beat — periodic task scheduler (rule engine cron)
+  # ---------------------------------------------------------------------------
+  beat:
+    image: ghcr.io/maxschramp/musically:latest
+    container_name: musically-beat
+    command: celery -A app.celery_app beat --loglevel=${LOG_LEVEL:-info}
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://musically:${DB_PASSWORD}@db:5432/musically
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SECRET_KEY=${SECRET_KEY}
+      - QOBUZ_EMAIL=${QOBUZ_EMAIL}
+      - QOBUZ_PASSWORD=${QOBUZ_PASSWORD}
+      - LASTFM_API_KEY=${LASTFM_API_KEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET}
+      - LASTFM_USERNAME=${LASTFM_USERNAME}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — primary database (production)
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: musically-db
+    environment:
+      POSTGRES_USER: musically
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: musically
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U musically"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Redis — message broker (Celery) + cache
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: musically-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Watchtower — auto-update Musically containers
+  # ---------------------------------------------------------------------------
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: musically-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 86400 --cleanup --label-enable
+    restart: unless-stopped

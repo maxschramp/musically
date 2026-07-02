@@ -3,11 +3,11 @@
 Runs ruff on backend Python files after they are edited by an agent.
 #>
 
-$input = $input | Out-String
-if (-not $input) { exit 0 }
+$rawInput = $input | Out-String
+if (-not $rawInput) { exit 0 }
 
 try {
-    $hookData = $input | ConvertFrom-Json
+    $hookData = $rawInput | ConvertFrom-Json
 } catch {
     exit 0
 }
@@ -20,7 +20,7 @@ if ($toolName -notin @('edit', 'replace_string_in_file', 'multi_replace_string_i
 
 # Extract the file path from tool input
 $toolInput = $hookData.tool_input
-$filePath = $toolInput.filePath ?? $toolInput.file_path ?? $toolInput.fileUri ?? ''
+$filePath = @($toolInput.filePath, $toolInput.file_path, $toolInput.fileUri, '') | Where-Object { $_ } | Select-Object -First 1
 
 if (-not $filePath) { exit 0 }
 

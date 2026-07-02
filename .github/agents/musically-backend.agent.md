@@ -139,7 +139,32 @@ Adapt this into `backend/app/utils/qobuz.py` as an async-friendly module used by
 2. Plan the implementation within the backend scope.
 3. Write code following the project structure above.
 4. Run tests after each meaningful change.
-5. Report what was implemented and what the next step should be.
+5. **Commit your changes** (see Git Workflow below).
+6. Report what was implemented and what the next step should be.
+
+## Git Workflow
+
+After completing a self-contained piece of work (a new endpoint, service, model + migration, or test suite), you MUST commit it:
+
+1. **Stage only relevant files** — use `git add` with specific paths, never `git add -A`:
+   ```bash
+   git add backend/app/models/new_model.py backend/tests/test_new_model.py
+   ```
+
+2. **Use conventional commits** with the `backend` scope:
+   - `feat(backend): add Album.downloaded_at column and migration`
+   - `fix(backend): handle Qobuz 429 rate limit with exponential backoff`
+   - `test(backend): add coverage for rule engine R1-R4`
+   - `refactor(backend): extract Qobuz auth into standalone client`
+   - `chore(backend): update requirements.txt with beets 2.x`
+
+3. **Write meaningful messages** — explain WHAT changed and WHY. Keep the summary line under 72 characters.
+
+4. **Verify before committing** — run tests first. Never commit broken or untested code.
+
+5. **Do NOT push** — the user controls when to push to remote. Commit locally only.
+
+6. **Commit at logical boundaries** — one commit per endpoint/service/model group. Not after every single file save.
 
 ## Output Format
 

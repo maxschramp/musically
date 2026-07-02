@@ -1,0 +1,20 @@
+﻿directory: /music/library
+library: /config/beets/library.db
+
+import:
+  copy: no
+  move: yes
+  write: yes
+  autotag: yes
+  quiet: no
+  timid: yes
+  resume: no
+  incremental: no
+
+paths:
+  default: $albumartist/$album/$track $artist - $title
+
+plugins: []
+
+ui:
+  color: yes

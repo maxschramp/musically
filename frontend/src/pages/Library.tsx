@@ -1,0 +1,488 @@
+// ============================================
+// Musically — Library Page
+// Searchable album art grid with API integration
+// ============================================
+
+import { useState, useEffect } from 'react';
+import {
+  Disc3,
+  Search,
+  CheckCircle,
+  XCircle,
+  Music,
+} from 'lucide-react';
+import { Card } from '@/components/shared/Card';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { ErrorState } from '@/components/shared/ErrorState';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { Modal } from '@/components/shared/Modal';
+import { useApiQuery } from '@/hooks/useApi';
+import { formatDate, truncate } from '@/utils/format';
+import type {
+  Album,
+  PaginatedResponse,
+  AlbumTracksResponse,
+  MusicBrainzAlbumResponse,
+  TrackComparisonRow,
+} from '@/types';
+
+// ============================================
+// Album Card
+// ============================================
+
+interface AlbumCardProps {
+  album: Album;
+  index: number;
+  onClick: () => void;
+}
+
+function AlbumCard({ album, index: _index, onClick }: AlbumCardProps) {
+  const [imgError, setImgError] = useState(false);
+
+  return (
+    <Card padding="sm" onClick={onClick}>
+      <div className="aspect-square rounded-sm bg-soft-stone flex items-center justify-center mb-3 overflow-hidden relative">
+        <img
+          src={`/api/albums/${album.id}/artwork`}
+          alt={`${album.artist_name} - ${album.title}`}
+          className="absolute inset-0 w-full h-full object-cover rounded-sm"
+          onError={() => setImgError(true)}
+          loading="lazy"
+        />
+        {imgError && (
+          <Disc3 className="w-10 h-10 text-muted" />
+        )}
+      </div>
+      <p className="text-sm font-medium text-ink truncate" title={album.title}>
+        {truncate(album.title, 30)}
+      </p>
+      <p className="text-xs text-muted truncate mt-0.5" title={album.artist_name}>
+        {album.artist_name}
+      </p>
+      {album.downloaded_at && (
+        <p className="text-xs text-body-muted mt-0.5">
+          {formatDate(album.downloaded_at)}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+// ============================================
+// Track Comparison Helpers
+// ============================================
+
+/**
+ * Normalize a filename for fuzzy matching against MusicBrainz track titles.
+ * Strips extension, leading track numbers, and replaces underscores/hyphens.
+ */
+function normalizeFilename(filename: string): string {
+  // Remove file extension
+  let name = filename.replace(/\.[^.]+$/, '');
+  // Replace underscores and hyphens with spaces
+  name = name.replace(/[_-]+/g, ' ');
+  // Remove leading track numbers like "01", "1.", "01 -", "1-", "01)", etc.
+  name = name.replace(/^\d{1,3}[\s.\-)]*\s*/, '');
+  // Collapse multiple spaces
+  name = name.replace(/\s+/g, ' ');
+  return name.trim();
+}
+
+/**
+ * Compare disk files with MusicBrainz tracks.
+ * Returns unified rows: matched pairs, MB-only (missing on disk), and disk-only (extra).
+ */
+function compareTracks(
+  diskTracks: { filename: string; size: number; format: string; path: string }[],
+  mbTracks: { position: number; title: string; length_ms: number; mbid: string }[],
+): TrackComparisonRow[] {
+  const rows: TrackComparisonRow[] = [];
+  const usedDiskIndices = new Set<number>();
+
+  // Pre-normalize disk filenames once
+  const normalizedDisks = diskTracks.map((dt) => normalizeFilename(dt.filename).toLowerCase());
+
+  // For each MusicBrainz track, find a matching disk file
+  for (const mbTrack of mbTracks) {
+    const mbTitleLower = mbTrack.title.toLowerCase();
+    const matchIdx = normalizedDisks.findIndex(
+      (norm, i) => !usedDiskIndices.has(i) && norm.includes(mbTitleLower),
+    );
+
+    if (matchIdx >= 0) {
+      usedDiskIndices.add(matchIdx);
+      rows.push({
+        diskTrack: diskTracks[matchIdx] ?? null,
+        mbTrack,
+        matchType: 'matched',
+      });
+    } else {
+      rows.push({
+        diskTrack: null,
+        mbTrack,
+        matchType: 'mb-only',
+      });
+    }
+  }
+
+  // Add any disk tracks that weren't matched to any MB track
+  for (let i = 0; i < diskTracks.length; i++) {
+    if (!usedDiskIndices.has(i)) {
+      rows.push({
+        diskTrack: diskTracks[i] ?? null,
+        mbTrack: null,
+        matchType: 'disk-only',
+      });
+    }
+  }
+
+  return rows;
+}
+
+/** Format milliseconds to mm:ss */
+function formatMs(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// ============================================
+// Library Page
+// ============================================
+
+export function Library() {
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+
+  // Debounce search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useApiQuery<PaginatedResponse<Album>>(
+    ['albums', debouncedSearch, page],
+    '/albums',
+    {
+      search: debouncedSearch || undefined,
+      page,
+      limit: 50,
+    },
+  );
+
+  // --- Album Detail Queries (enabled only when an album is selected) ---
+  const {
+    data: tracksData,
+    isLoading: tracksLoading,
+    isError: tracksError,
+    error: tracksErr,
+    refetch: refetchTracks,
+  } = useApiQuery<AlbumTracksResponse>(
+    ['album-tracks', selectedAlbum?.id],
+    `/albums/${selectedAlbum?.id}/tracks`,
+    undefined,
+    { enabled: !!selectedAlbum },
+  );
+
+  const {
+    data: mbData,
+    isLoading: mbLoading,
+    isError: mbError,
+    error: mbErr,
+    refetch: refetchMb,
+  } = useApiQuery<MusicBrainzAlbumResponse>(
+    ['album-musicbrainz', selectedAlbum?.id],
+    `/albums/${selectedAlbum?.id}/musicbrainz`,
+    undefined,
+    { enabled: !!selectedAlbum },
+  );
+
+  const albums = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / 50);
+
+  const errorMessage = error?.message ?? 'Failed to load library.';
+
+  // Build comparison rows when both queries are loaded
+  const detailLoading = tracksLoading || mbLoading;
+  const detailError = tracksError || mbError;
+  const detailErrMsg =
+    tracksErr?.message ?? mbErr?.message ?? 'Failed to load album details.';
+  const handleDetailRetry = () => {
+    if (tracksError) refetchTracks();
+    if (mbError) refetchMb();
+  };
+
+  const comparisonRows: TrackComparisonRow[] =
+    tracksData && mbData
+      ? compareTracks(tracksData.tracks, mbData.tracks)
+      : [];
+
+  const closeModal = () => setSelectedAlbum(null);
+
+  return (
+    <div className="space-y-6">
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+        <input
+          type="text"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search by artist or album title…"
+          className="w-full pl-10 pr-4 py-2.5 rounded-sm border border-hairline bg-canvas text-sm text-ink placeholder:text-muted focus:outline-none focus:border-form-focus focus:ring-1 focus:ring-form-focus transition-colors"
+        />
+      </div>
+
+      {/* Loading State */}
+      {isLoading && (
+        <Card padding="lg">
+          <LoadingSpinner size="lg" label="Loading library…" className="py-16" />
+        </Card>
+      )}
+
+      {/* Error State */}
+      {isError && !isLoading && (
+        <Card padding="lg">
+          <ErrorState
+            title="Failed to Load Library"
+            message={errorMessage}
+            onRetry={() => refetch()}
+          />
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && !isError && albums.length === 0 && (
+        <Card padding="lg">
+          <EmptyState
+            icon={<Disc3 className="w-16 h-16" />}
+            title={debouncedSearch ? 'No albums found' : 'No albums in library'}
+            description={
+              debouncedSearch
+                ? `No albums matching "${debouncedSearch}". Try a different search term.`
+                : 'Your downloaded FLAC library will appear here. Albums are added automatically based on your rule engine configuration.'
+            }
+          />
+        </Card>
+      )}
+
+      {/* Album Grid */}
+      {!isLoading && !isError && albums.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {albums.map((album, i) => (
+              <AlbumCard
+                key={album.id}
+                album={album}
+                index={i}
+                onClick={() => setSelectedAlbum(album)}
+              />
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-4">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 text-sm rounded-sm border border-hairline text-ink hover:bg-soft-stone disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-muted">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 text-sm rounded-sm border border-hairline text-ink hover:bg-soft-stone disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ============================================ */}
+      {/* Album Detail Modal                          */}
+      {/* ============================================ */}
+      <Modal open={!!selectedAlbum} onClose={closeModal}>
+        {/* Loading State */}
+        {detailLoading && (
+          <div className="p-8">
+            <LoadingSpinner size="lg" label="Loading album details…" className="py-16" />
+          </div>
+        )}
+
+        {/* Error State */}
+        {detailError && !detailLoading && (
+          <div className="p-8">
+            <ErrorState
+              title="Failed to Load Album Details"
+              message={detailErrMsg}
+              onRetry={handleDetailRetry}
+            />
+          </div>
+        )}
+
+        {/* Detail Content */}
+        {!detailLoading && !detailError && tracksData && mbData && (
+          <div className="flex flex-col">
+            {/* Header */}
+            <div className="flex items-start gap-5 p-6 pb-4 border-b border-card-border">
+              {/* Album Artwork */}
+              <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-sm bg-soft-stone flex-shrink-0 flex items-center justify-center overflow-hidden relative">
+                {selectedAlbum && (
+                  <img
+                    src={`/api/albums/${selectedAlbum.id}/artwork`}
+                    alt={`${tracksData.artist} - ${tracksData.title}`}
+                    className="absolute inset-0 w-full h-full object-cover rounded-sm"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                )}
+                <Disc3 className="w-12 h-12 text-muted" />
+              </div>
+
+              {/* Album Info */}
+              <div className="min-w-0 flex-1 pt-1">
+                <h2 className="text-xl font-medium text-ink leading-tight truncate">
+                  {tracksData.title}
+                </h2>
+                <p className="text-sm text-body-muted mt-1">
+                  {tracksData.artist}
+                </p>
+                <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted">
+                  <span>
+                    {tracksData.track_count} track{tracksData.track_count !== 1 ? 's' : ''} on disk
+                  </span>
+                  {mbData.found && (
+                    <span>
+                      {mbData.track_count} track{mbData.track_count !== 1 ? 's' : ''} on MusicBrainz
+                    </span>
+                  )}
+                  {mbData.mbid && (
+                    <span className="truncate max-w-[200px]" title={mbData.mbid}>
+                      MBID: {mbData.mbid}
+                    </span>
+                  )}
+                </div>
+                {!mbData.found && (
+                  <p className="text-xs text-coral mt-2">
+                    Album not found on MusicBrainz
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Track Comparison Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-card-border text-left text-xs text-muted uppercase tracking-wider">
+                    <th className="w-10 py-2.5 pl-6 font-medium">#</th>
+                    <th className="py-2.5 font-medium">Track on Disk</th>
+                    <th className="py-2.5 pr-6 font-medium">MusicBrainz</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-card-border">
+                  {comparisonRows.map((row, i) => (
+                    <tr
+                      key={i}
+                      className={
+                        row.matchType === 'mb-only'
+                          ? 'bg-coral/[0.04]'
+                          : row.matchType === 'disk-only'
+                            ? 'bg-soft-stone/50'
+                            : ''
+                      }
+                    >
+                      {/* Row number */}
+                      <td className="py-2.5 pl-6 text-muted tabular-nums">
+                        {row.mbTrack?.position ?? '—'}
+                      </td>
+
+                      {/* Disk track */}
+                      <td className="py-2.5">
+                        {row.diskTrack ? (
+                          <span className="text-ink truncate block max-w-[220px]" title={row.diskTrack.filename}>
+                            {row.diskTrack.filename}
+                          </span>
+                        ) : (
+                          <span className="text-muted italic">—</span>
+                        )}
+                      </td>
+
+                      {/* MusicBrainz track + match indicator */}
+                      <td className="py-2.5 pr-6">
+                        <div className="flex items-center gap-2">
+                          {row.mbTrack ? (
+                            <>
+                              <span className="text-ink truncate max-w-[200px]" title={row.mbTrack.title}>
+                                {row.mbTrack.title}
+                              </span>
+                              <span className="text-xs text-muted tabular-nums shrink-0">
+                                {formatMs(row.mbTrack.length_ms)}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-muted italic">—</span>
+                          )}
+
+                          {/* Match icon */}
+                          {row.matchType === 'matched' && (
+                            <CheckCircle className="w-4 h-4 text-deep-green shrink-0 ml-auto" />
+                          )}
+                          {row.matchType === 'mb-only' && (
+                            <XCircle className="w-4 h-4 text-coral shrink-0 ml-auto" />
+                          )}
+                          {row.matchType === 'disk-only' && (
+                            <Music className="w-4 h-4 text-muted shrink-0 ml-auto" />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Summary footer */}
+            <div className="flex items-center gap-4 px-6 py-3 border-t border-card-border text-xs text-muted">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5 text-deep-green" />
+                {comparisonRows.filter((r) => r.matchType === 'matched').length} matched
+              </span>
+              <span className="flex items-center gap-1.5">
+                <XCircle className="w-3.5 h-3.5 text-coral" />
+                {comparisonRows.filter((r) => r.matchType === 'mb-only').length} missing
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Music className="w-3.5 h-3.5 text-muted" />
+                {comparisonRows.filter((r) => r.matchType === 'disk-only').length} extra
+              </span>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}

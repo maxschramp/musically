@@ -1,0 +1,60 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.album import Album, AlbumStatus
+from app.models.artist import Artist
+from app.models.track_play import TrackPlay
+from app.schemas.common import StatsResponse
+
+router = APIRouter()
+
+
+@router.get("/health")
+async def health_check() -> dict:
+    """Health check endpoint."""
+    return {"status": "ok", "version": "0.1.0"}
+
+
+@router.get("/stats", response_model=StatsResponse)
+async def stats(
+    db: AsyncSession = Depends(get_db),
+) -> StatsResponse:
+    """Return real-time library and queue statistics."""
+    total_tracks = await db.scalar(select(func.count(TrackPlay.id)))
+    total_artists = await db.scalar(select(func.count(Artist.id)))
+    total_albums = await db.scalar(
+        select(func.count(Album.id)).where(Album.status == AlbumStatus.DOWNLOADED)
+    )
+    queued_count = await db.scalar(
+        select(func.count(Album.id)).where(Album.status == AlbumStatus.QUEUED)
+    )
+    downloading_count = await db.scalar(
+        select(func.count(Album.id)).where(Album.status == AlbumStatus.DOWNLOADING)
+    )
+    downloaded_count = await db.scalar(
+        select(func.count(Album.id)).where(Album.status == AlbumStatus.DOWNLOADED)
+    )
+    stalled_count = await db.scalar(
+        select(func.count(Album.id)).where(Album.status == AlbumStatus.STALLED)
+    )
+    rejected_count = await db.scalar(
+        select(func.count(Album.id)).where(Album.status == AlbumStatus.REJECTED)
+    )
+    subscribed_artists = await db.scalar(
+        select(func.count(Artist.id)).where(Artist.subscribed == True)
+    )
+
+    return StatsResponse(
+        total_albums=total_albums or 0,
+        total_tracks=total_tracks or 0,
+        total_artists=total_artists or 0,
+        queued_count=queued_count or 0,
+        downloading_count=downloading_count or 0,
+        downloaded_count=downloaded_count or 0,
+        stalled_count=stalled_count or 0,
+        rejected_count=rejected_count or 0,
+        subscribed_artists=subscribed_artists or 0,
+        watch_folder_pending=0,  # Watch folder integration is Phase 7
+    )

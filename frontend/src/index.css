@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+/* ============================================
+   Cohere Design Tokens — CSS Custom Properties
+   ============================================ */
+
+@theme {
+  /* Brand & Accent */
+  --color-primary: #17171c;
+  --color-cohere-black: #000000;
+  --color-ink: #212121;
+  --color-deep-green: #003c33;
+  --color-dark-navy: #071829;
+  --color-coral: #ff7759;
+  --color-coral-soft: #ffad9b;
+  --color-action-blue: #1863dc;
+  --color-focus-blue: #4c6ee6;
+  --color-form-focus: #9b60aa;
+  --color-error: #b30000;
+
+  /* Surface & Background */
+  --color-canvas: #ffffff;
+  --color-soft-stone: #eeece7;
+  --color-pale-green: #edfce9;
+  --color-pale-blue: #f1f5ff;
+  --color-card-border: #f2f2f2;
+  --color-hairline: #d9d9dd;
+  --color-border-light: #e5e7eb;
+
+  /* Text */
+  --color-muted: #93939f;
+  --color-slate: #75758a;
+  --color-body-muted: #616161;
+  --color-on-primary: #ffffff;
+  --color-on-dark: #ffffff;
+
+  /* Typography — Font Families */
+  --font-display: "CohereText", "Space Grotesk", "Inter", ui-sans-serif, system-ui;
+  --font-ui: "Unica77 Cohere Web", "Inter", "Arial", ui-sans-serif, system-ui;
+  --font-mono: "CohereMono", "Arial", ui-sans-serif, system-ui;
+
+  /* Border Radius */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-pill: 32px;
+  --radius-full: 9999px;
+
+  /* Spacing (extending Tailwind defaults) */
+  --spacing-section: 80px;
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-ink);
+  background-color: #fafafa;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* CohereText — fallback to system serif */
+@font-face {
+  font-family: "CohereText";
+  src: local("CohereText"), local("Space Grotesk");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Unica77 Cohere Web — fallback chain */
+@font-face {
+  font-family: "Unica77 Cohere Web";
+  src: local("Unica77 Cohere Web"), local("Inter"), local("Arial");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Unica77 Cohere Web";
+  src: local("Unica77 Cohere Web"), local("Inter"), local("Arial");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* CohereMono */
+@font-face {
+  font-family: "CohereMono";
+  src: local("CohereMono"), local("Arial");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.coral-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background-color: var(--color-coral);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-hairline);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-muted);
+}

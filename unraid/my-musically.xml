@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Musically</Name>
+  <Repository>ghcr.io/maxschramp/musically</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/maxschramp/musically</Support>
+  <Project>https://github.com/maxschramp/musically</Project>
+  <Overview>
+    Self-hosted music discovery and download automation.
+    Polls LastFM + Spotify, runs a rule engine, downloads FLAC from Qobuz,
+    tags with beets, and organizes your music library.
+
+    Features:
+    - Smart discovery from LastFM, Spotify, and MusicBrainz
+    - Auto-download albums from Qobuz based on configurable rules
+    - Auto-tagging with beets (MusicBrainz) for perfect FLAC metadata
+    - Swipeable mobile web UI built with React + Cohere design system
+    - Discord notifications when downloads complete
+    - Watch folder for automatic tagging of new files
+
+    ⚠ Requires separate PostgreSQL and Redis containers.
+    Install "postgresql16" and "redis" from Community Apps first.
+    Point DATABASE_URL and REDIS_URL below at those containers.
+  </Overview>
+  <Category>MediaApp:Music</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/maxschramp/musically/main/unraid/musically.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/maxschramp/musically/main/unraid/musically.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+
+  <!-- ================================================================= -->
+  <!-- Ports                                                              -->
+  <!-- ================================================================= -->
+  <Config Name="Web UI Port" Target="80" Default="8080" Mode="tcp" Description="Port to access the Musically web interface. Container runs nginx on port 80 internally." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+
+  <!-- ================================================================= -->
+  <!-- Paths (Volume Mappings)                                            -->
+  <!-- ================================================================= -->
+  <Config Name="Music Library" Target="/music" Default="/mnt/user/music" Mode="rw" Description="Your FLAC music library (NAS share). Contains your organized music files." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/music</Config>
+  <Config Name="Downloads Staging" Target="/downloads" Default="/mnt/user/appdata/musically/downloads" Mode="rw" Description="Temporary staging for Qobuz downloads before beets processes them." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/musically/downloads</Config>
+  <Config Name="AppData Config" Target="/config" Default="/mnt/user/appdata/musically/config" Mode="rw" Description="Application config, beets configuration, and persistent data." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/musically/config</Config>
+
+  <!-- ================================================================= -->
+  <!-- Environment Variables                                              -->
+  <!-- ================================================================= -->
+  <Config Name="Database URL" Target="DATABASE_URL" Default="postgresql+asyncpg://musically:musically@POSTGRES_IP:5432/musically" Mode="" Description="PostgreSQL connection string. Replace POSTGRES_IP with your PostgreSQL container name or IP." Type="Variable" Display="always" Required="true" Mask="false">postgresql+asyncpg://musically:musically@POSTGRES_IP:5432/musically</Config>
+  <Config Name="Redis URL" Target="REDIS_URL" Default="redis://REDIS_IP:6379/0" Mode="" Description="Redis connection string. Replace REDIS_IP with your Redis container name or IP." Type="Variable" Display="always" Required="true" Mask="false">redis://REDIS_IP:6379/0</Config>
+  <Config Name="Database Password" Target="DB_PASSWORD" Default="musically" Mode="" Description="PostgreSQL password for the database user." Type="Variable" Display="always" Required="true" Mask="true">musically</Config>
+  <Config Name="Secret Key" Target="SECRET_KEY" Default="" Mode="" Description="Random secret for encrypting tokens. Generate with: openssl rand -hex 32" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Qobuz Email" Target="QOBUZ_EMAIL" Default="" Mode="" Description="Your Qobuz account email address (required for downloads)." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Qobuz Password" Target="QOBUZ_PASSWORD" Default="" Mode="" Description="Your Qobuz account password." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="LastFM API Key" Target="LASTFM_API_KEY" Default="" Mode="" Description="LastFM API key. Get one at https://www.last.fm/api/account/create" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="LastFM API Secret" Target="LASTFM_API_SECRET" Default="" Mode="" Description="LastFM API shared secret." Type="Variable" Display="advanced-hide" Required="false" Mask="true"></Config>
+  <Config Name="LastFM Username" Target="LASTFM_USERNAME" Default="" Mode="" Description="Your LastFM username to poll for recent tracks." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Spotify Client ID" Target="SPOTIFY_CLIENT_ID" Default="" Mode="" Description="Spotify API client ID. Get one at https://developer.spotify.com/dashboard" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Spotify Client Secret" Target="SPOTIFY_CLIENT_SECRET" Default="" Mode="" Description="Spotify API client secret." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Spotify Redirect URI" Target="SPOTIFY_REDIRECT_URI" Default="http://localhost:8080/api/v1/auth/spotify/callback" Mode="" Description="OAuth redirect URI (must match your Spotify app settings)." Type="Variable" Display="advanced-hide" Required="false" Mask="false">http://localhost:8080/api/v1/auth/spotify/callback</Config>
+  <Config Name="Discord Webhook URL" Target="DISCORD_WEBHOOK_URL" Default="" Mode="" Description="Discord webhook URL for download notifications. Create at Server Settings → Integrations → Webhooks." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Environment" Target="ENVIRONMENT" Default="production" Mode="" Description="Application environment: development or production." Type="Variable" Display="advanced-hide" Required="false" Mask="false">production</Config>
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="info" Mode="" Description="Log level: debug, info, warning, error." Type="Variable" Display="advanced-hide" Required="false" Mask="false">info</Config>
+</Container>

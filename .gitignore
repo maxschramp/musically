@@ -28,7 +28,7 @@ frontend/.vite/
 Thumbs.db
 
 # Docker
-docker-compose.override.yml
+# docker-compose.override.yml is tracked — it's the dev template, not a user override
 
 # beets
 *.db-journal
@@ -41,3 +41,21 @@ docker-compose.override.yml
 
 # Qobuz credentials file
 qobuz_creds.json
+
+# Database files (may contain credentials)
+*.db
+*.sqlite
+*.sqlite3
+
+# Test virtualenv
+.venv-test/
+
+# Runtime data (should never be committed)
+data/postgres/
+data/redis/
+backend/data/artwork_cache/
+backend/data/celerybeat-schedule
+
+# Utility / debugging scripts
+_check_constraint.py
+_fix_spotify2.py

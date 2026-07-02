@@ -133,6 +133,31 @@ frontend/
 3. Build bottom-up: shared components → feature components → pages → routing.
 4. Wire up API hooks to real backend endpoints as they become available.
 5. Test responsive behavior at mobile (375px), tablet (768px), and desktop (1280px).
+6. **Commit your changes** (see Git Workflow below).
+
+## Git Workflow
+
+After completing a self-contained piece of work (a new component, page, hook, or API integration), you MUST commit it:
+
+1. **Stage only relevant files** — use `git add` with specific paths, never `git add -A`:
+   ```bash
+   git add frontend/src/components/queue/QueueCard.tsx frontend/src/hooks/useQueue.ts
+   ```
+
+2. **Use conventional commits** with the `frontend` scope:
+   - `feat(frontend): add swipeable QueueCard component`
+   - `fix(frontend): handle empty state in LibraryGrid`
+   - `style(frontend): apply Cohere tokens to Dashboard stats cards`
+   - `refactor(frontend): extract useApi hook for shared fetch logic`
+   - `chore(frontend): add react-swipeable dependency`
+
+3. **Write meaningful messages** — explain WHAT changed and WHY. Keep the summary line under 72 characters.
+
+4. **Verify before committing** — ensure `npm run build` (or at least `npm run lint`) passes. Never commit broken code.
+
+5. **Do NOT push** — the user controls when to push to remote. Commit locally only.
+
+6. **Commit at logical boundaries** — one commit per component/page/hook group. Not after every single file save.
 
 ## Output Format
 
