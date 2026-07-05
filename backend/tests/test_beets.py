@@ -44,8 +44,6 @@ async def test_import_album_success(beets_service: BeetsService) -> None:
         assert args[0] == "beet"
         assert "import" in args
         assert "-q" in args
-        assert "-l" in args
-        assert "/test/config.yaml" in args
         assert "-c" in args  # copy mode by default
         assert "/tmp/test_album" in args
 

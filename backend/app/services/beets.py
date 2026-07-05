@@ -26,10 +26,22 @@ class BeetsService:
 
     Runs `beet import` as an async subprocess. Beets must be installed and
     available in PATH on the system (installed via apt in the Docker image).
+
+    The beets config directory (containing config.yaml and library.db) is
+    set via the ``BEETSDIR`` environment variable so subprocess calls pick
+    up the correct configuration.
     """
 
     def __init__(self, config_path: str = "/config/beets/config.yaml") -> None:
+        # config_path is the path to config.yaml; the directory containing
+        # it is used as BEETSDIR so beets finds both config.yaml and library.db.
+        import os
+        from pathlib import Path
+
         self.config_path = config_path
+        self.beets_dir = str(Path(config_path).parent)
+        # Ensure BEETSDIR is set for subprocess calls
+        os.environ.setdefault("BEETSDIR", self.beets_dir)
 
     async def import_album(
         self,
@@ -41,19 +53,21 @@ class BeetsService:
 
         Flags:
           -q   = quiet (no interactive prompts)
-          -l   = use specific config file
           -c   = copy (never move, safer for NAS)
           -C   = do not copy; move files (set move=True for this)
 
+        The library database path is read from the beets config file
+        (set via the BEETSDIR environment variable).
+
         Args:
             source_dir: Path to the directory containing FLAC files to import.
-            dest_base: Base library directory (used in beets config, passed for reference).
+            dest_base: Base library directory (informational, not passed to beets).
             move: If True, use -C (move). Default is -c (copy, safer for NAS).
 
         Returns:
             BeetsResult with success status, matched album name, and any errors.
         """
-        cmd = ["beet", "import", "-q", "-l", self.config_path]
+        cmd = ["beet", "import", "-q"]
 
         if move:
             cmd.append("-C")  # move mode
@@ -81,6 +95,11 @@ class BeetsService:
 
             if process.returncode != 0:
                 error_msg = stderr or stdout or f"beets exited with code {process.returncode}"
+                logger.warning(
+                    "beets import FAILED (rc=%d): %s",
+                    process.returncode,
+                    error_msg[:500],
+                )
                 return BeetsResult(
                     success=False,
                     files_imported=0,

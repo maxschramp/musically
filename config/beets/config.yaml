@@ -2,12 +2,12 @@
 library: /config/beets/library.db
 
 import:
-  copy: no
-  move: yes
+  copy: yes
+  move: no
   write: yes
   autotag: yes
-  quiet: no
-  timid: yes
+  quiet: yes
+  timid: no
   resume: no
   incremental: no
 
