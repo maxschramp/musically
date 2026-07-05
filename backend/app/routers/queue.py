@@ -411,7 +411,7 @@ async def retry_queue_item(
         raise HTTPException(status_code=404, detail=f"Queue item {queue_id} not found")
 
     album.retry_count = 0
-    album.next_retry_at = datetime.now(timezone.utc)
+    album.next_retry_at = datetime.utcnow()
     album.status = AlbumStatus.QUEUED
     await db.commit()
     await db.refresh(album)

@@ -103,6 +103,12 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Build metadata for the bootup banner
+ARG BUILD_DATE=unknown
+ARG BUILD_REF=dev
+ENV BUILD_DATE=${BUILD_DATE}
+ENV BUILD_REF=${BUILD_REF}
+
 # Copy backend application code
 COPY backend/ /app/
 WORKDIR /app

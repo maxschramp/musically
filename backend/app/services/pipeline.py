@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_RETRY_INTERVALS = [24, 72, 168, 336]
 
 
+def _utcnow() -> datetime:
+    """Return the current UTC time as a naive datetime.
+
+    PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns reject timezone-aware
+    datetimes via asyncpg.  This helper strips the tzinfo so writes succeed.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 @dataclass
 class PipelineResult:
     """Result of processing a single album through the download pipeline."""
@@ -291,7 +300,7 @@ class DownloadPipeline:
 
                 # Step 6: Mark as downloaded
                 album.status = AlbumStatus.DOWNLOADED
-                album.downloaded_at = datetime.now(timezone.utc)
+                album.downloaded_at = _utcnow()
                 album.next_retry_at = None
                 await db.commit()
 
@@ -475,7 +484,7 @@ class DownloadPipeline:
 
                 # Step 4: Mark as downloaded
                 album.status = AlbumStatus.DOWNLOADED
-                album.downloaded_at = datetime.now(timezone.utc)
+                album.downloaded_at = _utcnow()
                 album.next_retry_at = None
                 await db.commit()
 
