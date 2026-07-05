@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.album import Album, AlbumStatus, QueueType
 from app.models.artist import Artist
+from app.models.playlist_track import PlaylistTrack
 from app.services.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
@@ -154,7 +155,21 @@ async def list_queue(
     result = await db.execute(
         stmt.order_by(sort_column).offset(offset).limit(limit)
     )
-    albums = result.scalars().all()
+    albums = list(result.scalars().all())
+
+    # -------------------------------------------------------------------
+    # Enrich queued albums with track counts from PlaylistTrack.
+    # Queued albums don't have files on disk yet, so filesystem-based
+    # counting (used by the Library endpoint) always returns 0.  Instead,
+    # count matching PlaylistTrack rows from LastFM / Spotify playlists.
+    # -------------------------------------------------------------------
+    for album in albums:
+        count_stmt = select(func.count(PlaylistTrack.id)).where(
+            func.lower(PlaylistTrack.artist_name) == func.lower(album.artist_name),
+            func.lower(PlaylistTrack.album_name) == func.lower(album.title),
+        )
+        count_result = await db.execute(count_stmt)
+        setattr(album, 'track_count', count_result.scalar() or 0)
 
     total_pages = max(1, (total + limit - 1) // limit)
 
@@ -180,6 +195,15 @@ async def get_queue_item(
     album = result.scalar_one_or_none()
     if album is None:
         raise HTTPException(status_code=404, detail=f"Queue item {queue_id} not found")
+
+    # Enrich with track count from PlaylistTrack
+    count_stmt = select(func.count(PlaylistTrack.id)).where(
+        func.lower(PlaylistTrack.artist_name) == func.lower(album.artist_name),
+        func.lower(PlaylistTrack.album_name) == func.lower(album.title),
+    )
+    count_result = await db.execute(count_stmt)
+    setattr(album, 'track_count', count_result.scalar() or 0)
+
     return _album_to_response(album)
 
 
