@@ -39,28 +39,30 @@ export function useInfiniteScroll<T>(
     { enabled: hasMore },
   );
 
-  // Keep isLoadingRef in sync
+  // Keep isLoadingRef in sync (runs on every render, always current)
   isLoadingRef.current = isLoading;
 
   // Accumulate items when data changes
   useEffect(() => {
     if (!data) return;
 
-    setItems((prev) => {
-      if (page === 1) {
-        // New search/filter: replace items entirely
-        setTotal(data.total);
-        setHasMore(data.items.length === pageSize && data.items.length < data.total);
-        return data.items;
-      }
+    if (page === 1) {
+      // New search/filter: replace items entirely
+      setItems(data.items);
+      setTotal(data.total);
+      setHasMore(data.items.length === pageSize && data.items.length < data.total);
+      return;
+    }
 
-      // Subsequent page: append, deduplicate by ID
+    // Subsequent page: append, deduplicate by ID
+    setItems((prev) => {
       const existingIds = new Set(prev.map((item: unknown) => (item as { id: string }).id));
       const newUnique = data.items.filter(
         (item: unknown) => !existingIds.has((item as { id: string }).id),
       );
       const accumulated = [...prev, ...newUnique];
 
+      // Update total and hasMore based on accumulated state
       setTotal(data.total);
       setHasMore(
         data.items.length === pageSize && accumulated.length < data.total,
@@ -70,7 +72,11 @@ export function useInfiniteScroll<T>(
     });
   }, [data, page, pageSize]);
 
-  // Intersection Observer for scroll detection
+  // Intersection Observer for scroll detection.
+  // Only depends on hasMore and threshold — NOT isLoading, because:
+  // - isLoadingRef is always current (set during render, before effects)
+  // - hasMoreRef is always current (set during render, before effects)
+  // - Recreating the observer on every load toggle can cause missed intersections
   useEffect(() => {
     const loader = loaderRef.current;
     if (!loader || !hasMore) return;
@@ -90,7 +96,7 @@ export function useInfiniteScroll<T>(
 
     observer.observe(loader);
     return () => observer.disconnect();
-  }, [hasMore, isLoading, threshold]);
+  }, [hasMore, threshold]);
 
   const reset = useCallback(() => {
     setPage(1);

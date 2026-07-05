@@ -226,7 +226,7 @@ export function Downloads() {
   } = useApiQuery<PaginatedResponse<Album>>(
     ['queue', 'pipeline', 'queued'],
     '/queue',
-    { status: 'queued', type: 'manual', sort: '-created_at', limit: 100 },
+    { status: 'queued', type: 'auto', sort: '-created_at', limit: 100 },
     { refetchInterval: REFETCH_INTERVAL },
   );
 
@@ -391,7 +391,7 @@ export function Downloads() {
             renderSectionItems(upNext, MAX_VISIBLE_PER_SECTION)
           ) : (
             <div className="py-8 text-center">
-              <p className="text-sm text-muted">Queue is empty. Albums queued by the rule engine or manually added will appear here.</p>
+              <p className="text-sm text-muted">No approved albums waiting. Swipe right on albums to approve them for download.</p>
             </div>
           )}
         </div>

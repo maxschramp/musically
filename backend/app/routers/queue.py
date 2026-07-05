@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_factory, get_db
 from app.models.album import Album, AlbumStatus, QueueType
 from app.models.artist import Artist
 from app.models.playlist_track import PlaylistTrack
+from app.models.setting import Setting
 from app.services.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,8 @@ def _dispatch_download_bg(album_id: uuid.UUID) -> None:
 
     Creates an asyncio task that runs independently of the HTTP request.
     Used when no Celery worker is available to process the task queue.
+    After the pipeline completes (success or failure), triggers the next
+    approved album if a download slot is free.
     """
     async def _run() -> None:
         try:
@@ -43,6 +46,14 @@ def _dispatch_download_bg(album_id: uuid.UUID) -> None:
             await pipeline.notifier.close()
         except Exception:
             logger.exception("Background download crashed for %s", album_id)
+        finally:
+            # Free up a slot and dispatch next approved album
+            try:
+                dispatched = await _try_dispatch_next()
+                if dispatched:
+                    logger.info("Dispatched next album after background download completed")
+            except Exception:
+                logger.exception("Failed to dispatch next album after background download")
 
     asyncio.create_task(_run())
 
@@ -55,6 +66,73 @@ def _celery_available() -> bool:
         return bool(workers)
     except Exception:
         return False
+
+
+async def _count_downloading(db: AsyncSession) -> int:
+    """Count how many albums are currently being downloaded."""
+    stmt = select(func.count(Album.id)).where(Album.status == AlbumStatus.DOWNLOADING)
+    result = await db.execute(stmt)
+    return result.scalar() or 0
+
+
+async def _get_setting_int_from_db(db: AsyncSession, key: str, default: int) -> int:
+    """Read a setting value from the DB as int, falling back to *default*."""
+    stmt = select(Setting.value).where(Setting.key == key)
+    result = await db.execute(stmt)
+    value = result.scalar()
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        logger.warning("Setting %s=%r is not a valid int; using default %d.", key, value, default)
+        return default
+
+
+async def _try_dispatch_next(db: AsyncSession | None = None) -> int:
+    """Check concurrency limit and dispatch the next approved album if a slot is free.
+
+    If *db* is None, a fresh session is created and committed automatically.
+    Returns the number of albums dispatched (0 or 1).
+    """
+    own_session = db is None
+    if own_session:
+        db = async_session_factory()
+
+    try:
+        max_concurrent = await _get_setting_int_from_db(db, "max_concurrent_downloads", 3)
+        currently_downloading = await _count_downloading(db)
+
+        if currently_downloading >= max_concurrent:
+            logger.debug(
+                "Download slots full (%d/%d), not dispatching next.",
+                currently_downloading, max_concurrent,
+            )
+            return 0
+
+        # Find the oldest approved (type=auto) queued album
+        stmt = (
+            select(Album)
+            .where(Album.status == AlbumStatus.QUEUED, Album.queue_type == QueueType.AUTO)
+            .order_by(Album.created_at.asc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        next_album = result.scalar_one_or_none()
+
+        if next_album is None:
+            return 0
+
+        _try_dispatch(next_album.id)
+        logger.info(
+            "Dispatched next approved album: %s - %s (slot %d/%d)",
+            next_album.artist_name, next_album.title,
+            currently_downloading + 1, max_concurrent,
+        )
+        return 1
+    finally:
+        if own_session:
+            await db.close()
 
 
 def _try_dispatch(album_id: uuid.UUID) -> None:
@@ -87,6 +165,7 @@ def _album_to_response(album: Album) -> AlbumResponse:
 # ---------------------------------------------------------------------------
 # GET /queue — List with filters and pagination
 # ---------------------------------------------------------------------------
+
 @router.get("/queue", response_model=PaginatedResponse[AlbumResponse])
 async def list_queue(
     status: str | None = Query(None, description="Filter by album status"),
@@ -170,6 +249,24 @@ async def list_queue(
         )
         count_result = await db.execute(count_stmt)
         setattr(album, 'track_count', count_result.scalar() or 0)
+
+    # -------------------------------------------------------------------
+    # When querying manual queue items (used by the Swipe page), apply
+    # the swipe_min_track_count threshold.  Singles and very short EPs
+    # are filtered out to keep the swipe review queue focused on
+    # full-length releases.
+    # -------------------------------------------------------------------
+    if type == 'manual':
+        min_tracks = await _get_setting_int_from_db(db, "swipe_min_track_count", 4)
+        before = len(albums)
+        albums = [a for a in albums if getattr(a, 'track_count', 0) >= min_tracks]
+        removed = before - len(albums)
+        if removed:
+            logger.info(
+                "Queue swipe filter: removed %d albums below %d-track threshold",
+                removed, min_tracks,
+            )
+            total = max(0, total - removed)
 
     total_pages = max(1, (total + limit - 1) // limit)
 
@@ -343,10 +440,11 @@ async def approve_queue_item(
     queue_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> AlbumResponse:
-    """Approve a queued album for automatic download.
+    """Approve a queued album for download.
 
-    Sets queue_type=auto and dispatches the download immediately
-    (via Celery worker or in-process background task).
+    Sets queue_type=auto to mark it as approved.  The album enters the
+    "Up Next" pool and will be dispatched when a download slot is free
+    (respecting max_concurrent_downloads).
     """
     result = await db.execute(select(Album).where(Album.id == queue_id))
     album = result.scalar_one_or_none()
@@ -362,8 +460,8 @@ async def approve_queue_item(
     await db.commit()
     await db.refresh(album)
 
-    # Dispatch download immediately
-    _try_dispatch(queue_id)
+    # Try to dispatch (respects concurrency limit internally)
+    await _try_dispatch_next(db)
 
     event_bus.publish("queue_changed", {"album_id": str(queue_id), "action": "approved"})
 
@@ -378,7 +476,7 @@ async def promote_queue_item(
     queue_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> AlbumResponse:
-    """Promote an album to download immediately: approve + dispatch."""
+    """Promote an album to download: approve + try to dispatch immediately."""
     result = await db.execute(select(Album).where(Album.id == queue_id))
     album = result.scalar_one_or_none()
     if album is None:
@@ -393,8 +491,8 @@ async def promote_queue_item(
     await db.commit()
     await db.refresh(album)
 
-    # Dispatch immediately
-    _try_dispatch(queue_id)
+    # Try to dispatch (respects concurrency limit internally)
+    await _try_dispatch_next(db)
 
     event_bus.publish("queue_changed", {"album_id": str(queue_id), "action": "promoted"})
 

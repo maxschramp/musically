@@ -10,6 +10,7 @@ import { Card } from '@/components/shared/Card';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { SkeletonArtistRows } from '@/components/shared/Skeleton';
 import { Button } from '@/components/shared/Button';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { apiClient } from '@/api/client';
@@ -301,12 +302,14 @@ export function Artists() {
                 />
               ))}
             </div>
+            {/* Skeleton placeholders while loading the next page */}
+            {isLoadingMore && <SkeletonArtistRows count={5} />}
           </Card>
 
           {/* Infinite scroll sentinel */}
           {hasMore && (
             <div ref={loaderRef} className="py-4 flex justify-center">
-              {isLoadingMore ? <LoadingSpinner size="sm" /> : null}
+              {isLoadingMore ? <LoadingSpinner size="sm" label="Loading more…" /> : null}
             </div>
           )}
         </>

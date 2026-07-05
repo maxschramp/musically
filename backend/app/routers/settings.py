@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import DEFAULT_SETTINGS, SETTING_CATEGORIES
+from app.constants import DEFAULT_SETTINGS, SETTING_CATEGORIES, SETTING_DESCRIPTIONS
 from app.database import get_db
 from app.models.setting import Setting
 from app.schemas.settings import SettingResponse, SettingsBulkUpdate
@@ -38,16 +38,21 @@ def _setting_to_response(setting: Setting) -> SettingResponse:
 
 
 async def _seed_defaults(db: AsyncSession) -> None:
-    """Insert default settings if the settings table is empty."""
-    result = await db.execute(select(Setting.key).limit(1))
-    if result.scalar() is not None:
-        return  # Already seeded
+    """Ensure all default settings exist in the DB (upsert on first access)."""
+    # Fetch all existing setting keys
+    result = await db.execute(select(Setting.key))
+    existing_keys: set[str] = {row[0] for row in result}
 
+    added = 0
     for key, value in DEFAULT_SETTINGS.items():
-        category = SETTING_CATEGORIES.get(key, "general")
-        db.add(Setting(key=key, value=value, description="", category=category))
+        if key not in existing_keys:
+            category = SETTING_CATEGORIES.get(key, "general")
+            description = SETTING_DESCRIPTIONS.get(key, "")
+            db.add(Setting(key=key, value=value, description=description, category=category))
+            added += 1
 
-    await db.commit()
+    if added:
+        await db.commit()
 
 
 @router.get("/settings", response_model=dict[str, list[SettingResponse]])
@@ -94,7 +99,8 @@ async def update_settings(
         else:
             # Create new setting if key not present (with unknown category -> general)
             category = SETTING_CATEGORIES.get(key, "general")
-            db.add(Setting(key=key, value=new_value, description="", category=category))
+            description = SETTING_DESCRIPTIONS.get(key, "")
+            db.add(Setting(key=key, value=new_value, description=description, category=category))
 
     await db.commit()
 

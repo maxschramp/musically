@@ -20,6 +20,7 @@ import { Button } from '@/components/shared/Button';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { SkeletonAlbumGrid } from '@/components/shared/Skeleton';
 import { Modal } from '@/components/shared/Modal';
 import { useApiQuery } from '@/hooks/useApi';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -437,6 +438,9 @@ export function Library() {
               />
             ))}
           </div>
+
+          {/* Skeleton placeholders while loading the next page */}
+          {isLoadingMore && <SkeletonAlbumGrid count={10} />}
 
           {/* Infinite scroll sentinel */}
           {hasMore && (

@@ -203,6 +203,12 @@ def download_album_task(self, album_id: str) -> dict:
             _run_async(pipeline.notifier.close())
         except Exception:
             pass
+        # Free up a download slot and dispatch the next approved album
+        try:
+            from app.routers.queue import _try_dispatch_next
+            _run_async(_try_dispatch_next())
+        except Exception:
+            logger.exception("Failed to dispatch next album after Celery task")
 
 
 # Legacy alias for backward compatibility

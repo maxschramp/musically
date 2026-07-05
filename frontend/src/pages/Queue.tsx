@@ -15,6 +15,7 @@ import { Card } from '@/components/shared/Card';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { SkeletonQueueRows, SkeletonQueueTableRows } from '@/components/shared/Skeleton';
 import { formatDate } from '@/utils/format';
 import type { Album } from '@/types';
 
@@ -271,10 +272,27 @@ export function Queue() {
         />
       )}
 
+      {/* Skeleton placeholders while loading the next page */}
+      {isLoadingMore && (
+        isMobile
+          ? <SkeletonQueueRows count={3} />
+          : (
+            <Card padding="none" className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <tbody className="divide-y divide-card-border">
+                    <SkeletonQueueTableRows count={5} />
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )
+      )}
+
       {/* Infinite scroll sentinel */}
       {hasMore && (
         <div ref={loaderRef} className="py-4 flex justify-center">
-          {isLoadingMore ? <LoadingSpinner size="sm" /> : null}
+          {isLoadingMore ? <LoadingSpinner size="sm" label="Loading more…" /> : null}
         </div>
       )}
     </div>
