@@ -6,6 +6,7 @@
 import {
   useState,
   useCallback,
+  useEffect,
   useRef,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent,
@@ -29,14 +30,24 @@ import type { Album, PaginatedResponse } from '@/types';
 
 const SWIPE_THRESHOLD = 100;
 const MAX_VISIBLE_CARDS = 3;
+const EXIT_ANIMATION_MS = 350;
+
+// ============================================
+// Types
+// ============================================
+
+interface ExitingState {
+  direction: 'left' | 'right';
+  album: Album;
+}
 
 // ============================================
 // Swipe Page
 // ============================================
 
 export function Swipe() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [exiting, setExiting] = useState<'left' | 'right' | null>(null);
+  const [swipedIds, setSwipedIds] = useState<Set<string>>(new Set());
+  const [exiting, setExiting] = useState<ExitingState | null>(null);
   const [flippedCardId, setFlippedCardId] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -62,12 +73,41 @@ export function Swipe() {
     onSuccess: invalidateQueue,
   });
 
-  // ---- Derived ----
+  // ---- Derived state ----
 
   const items: Album[] = data?.items ?? [];
-  const allReviewed = currentIndex >= items.length;
-  const visibleItems = items.slice(currentIndex, currentIndex + MAX_VISIBLE_CARDS);
+
+  // Filter out swiped IDs (ID-based, immune to TOCTOU race)
+  const nonSwiped = items.filter((a) => !swipedIds.has(a.id));
+
+  // Build visible card stack: exiting card first, then remaining non-swiped
+  let visibleItems: Album[];
+
+  if (exiting) {
+    // Keep the exiting card rendered for the exit animation.
+    // Dedupe in case the API refetch hasn't removed it yet.
+    const rest = nonSwiped.filter((a) => a.id !== exiting.album.id);
+    visibleItems = [exiting.album, ...rest].slice(0, MAX_VISIBLE_CARDS);
+  } else {
+    visibleItems = nonSwiped.slice(0, MAX_VISIBLE_CARDS);
+  }
+
   const currentAlbum = visibleItems[0] ?? null;
+  const allReviewed = nonSwiped.length === 0 && !exiting;
+  const hasSwipedAny = swipedIds.size > 0;
+
+  // ---- Preload next card's artwork ----
+
+  useEffect(() => {
+    // Preload the (MAX_VISIBLE_CARDS + 1)th non-swiped item's artwork
+    // so its image is cached before it becomes visible.
+    const preloadCandidate = nonSwiped[MAX_VISIBLE_CARDS];
+    if (preloadCandidate) {
+      const img = new Image();
+      img.src = `/api/albums/${preloadCandidate.id}/artwork`;
+    }
+    // Image() constructor triggers a fetch; no cleanup needed.
+  }, [nonSwiped.length > MAX_VISIBLE_CARDS ? nonSwiped[MAX_VISIBLE_CARDS]?.id : null]);
 
   // ---- Swipe handler ----
 
@@ -75,20 +115,26 @@ export function Swipe() {
     (direction: 'left' | 'right') => {
       if (!currentAlbum || exiting) return;
 
-      setExiting(direction);
+      const album = currentAlbum;
+
+      // Bug 3 fix: fire mutation immediately — don't wait for animation
+      if (direction === 'right') {
+        approveMutation.mutate(album.id);
+      } else {
+        rejectMutation.mutate(album.id);
+      }
+
+      setExiting({ direction, album });
       setFlippedCardId(null);
 
-      const id = currentAlbum.id;
-
       setTimeout(() => {
-        if (direction === 'right') {
-          approveMutation.mutate(id);
-        } else {
-          rejectMutation.mutate(id);
-        }
-        setCurrentIndex((prev) => prev + 1);
+        setSwipedIds((prev) => {
+          const next = new Set(prev);
+          next.add(album.id);
+          return next;
+        });
         setExiting(null);
-      }, 350);
+      }, EXIT_ANIMATION_MS);
     },
     [currentAlbum, exiting, approveMutation, rejectMutation],
   );
@@ -114,19 +160,19 @@ export function Swipe() {
   if (isLoading) return <PageLoading />;
   if (isError) return <ErrorState onRetry={() => refetch()} />;
 
-  if (items.length === 0 || allReviewed) {
+  if (allReviewed) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <EmptyState
           icon={<Heart className="w-16 h-16" />}
-          title={allReviewed ? 'All caught up!' : 'No albums pending review'}
+          title={hasSwipedAny ? 'All caught up!' : 'No albums pending review'}
           description={
-            allReviewed
+            hasSwipedAny
               ? 'You have reviewed all queued albums. Check back later or add more from the artist pages.'
               : 'Albums queued by the rule engine or from Spotify playlists will appear here for your approval.'
           }
-          actionLabel={allReviewed ? 'View Queue' : undefined}
-          onAction={allReviewed ? () => window.location.href = '/queue' : undefined}
+          actionLabel={hasSwipedAny ? 'View Queue' : undefined}
+          onAction={hasSwipedAny ? () => (window.location.href = '/queue') : undefined}
         />
       </div>
     );
@@ -154,7 +200,7 @@ export function Swipe() {
               isTop={isTop}
               isFlipped={isFlipped}
               stackIndex={i}
-              exiting={isTop ? exiting : null}
+              exiting={isTop && exiting ? { direction: exiting.direction } : null}
               onSwipeLeft={() => handleSwipe('left')}
               onSwipeRight={() => handleSwipe('right')}
               onFlip={() => handleFlip(album.id)}
@@ -196,7 +242,7 @@ export function Swipe() {
 
       {/* Progress indicator */}
       <p className="text-xs text-body-muted">
-        {currentIndex + 1} of {items.length}
+        {swipedIds.size} of {items.length + swipedIds.size}
       </p>
     </div>
   );
@@ -220,10 +266,9 @@ function SwipeCard({
   isTop: boolean;
   isFlipped: boolean;
   stackIndex: number;
-  exiting: 'left' | 'right' | null;
+  exiting: { direction: 'left' | 'right' } | null;
   onSwipeLeft: () => void;
   onSwipeRight: () => void;
-
   onFlip: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
@@ -285,9 +330,9 @@ function SwipeCard({
 
   let transform = '';
 
-  if (exiting === 'left') {
+  if (exiting?.direction === 'left') {
     transform = `translateX(-150%) translateY(${offset.y * 0.5}px) rotate(-20deg)`;
-  } else if (exiting === 'right') {
+  } else if (exiting?.direction === 'right') {
     transform = `translateX(150%) translateY(${offset.y * 0.5}px) rotate(20deg)`;
   } else if (isTop && dragging) {
     const rotate = offset.x * 0.05;
@@ -305,7 +350,9 @@ function SwipeCard({
       className={`absolute inset-0 ${isTop ? 'z-20' : `z-${20 - stackIndex}`} ${!isTop && !exiting ? 'pointer-events-none' : ''}`}
       style={{
         transform,
-        transition: dragging || exiting ? 'none' : 'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+        // Bug 1 fix: only disable transition during active dragging.
+        // Exit animation now transitions smoothly to off-screen.
+        transition: dragging ? 'none' : 'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       {/* Feedback overlays */}
@@ -343,7 +390,14 @@ function SwipeCard({
             {imgError ? (
               <Disc3 className="w-20 h-20 text-hairline" />
             ) : (
-              <img src={`/api/albums/${album.id}/artwork`} alt="" className="h-full w-full object-cover" onError={() => setImgError(true)} loading="lazy" />
+              <img
+                src={`/api/albums/${album.id}/artwork`}
+                alt=""
+                className="h-full w-full object-cover"
+                onError={() => setImgError(true)}
+                loading="eager"
+                decoding="async"
+              />
             )}
           </div>
 
