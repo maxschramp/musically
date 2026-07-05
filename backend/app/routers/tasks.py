@@ -16,6 +16,7 @@ from app.schemas.tasks import (
     TaskRunResponse,
     TaskTriggerResponse,
 )
+from app.services.event_bus import event_bus
 
 router = APIRouter()
 
@@ -140,6 +141,8 @@ async def trigger_task(task_name: str, request: Request) -> TaskTriggerResponse:
                 run.result_summary = f"Task '{task_name}' completed successfully."
                 await db.commit()
 
+        event_bus.publish("task_completed", {"task_name": task_name, "status": "completed"})
+
         return TaskTriggerResponse(
             task_name=task_name,
             triggered=True,
@@ -155,6 +158,8 @@ async def trigger_task(task_name: str, request: Request) -> TaskTriggerResponse:
                 run.completed_at = datetime.utcnow()
                 run.error_message = str(e)[:500]
                 await db.commit()
+
+        event_bus.publish("task_completed", {"task_name": task_name, "status": "failed", "error": str(e)[:200]})
 
         return TaskTriggerResponse(
             task_name=task_name,

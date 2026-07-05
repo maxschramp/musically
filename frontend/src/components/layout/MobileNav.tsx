@@ -6,10 +6,10 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
+  Heart,
   Compass,
   Download,
   Disc3,
-  Settings,
 } from 'lucide-react';
 
 interface MobileNavItem {
@@ -20,10 +20,10 @@ interface MobileNavItem {
 
 const mobileNavItems: MobileNavItem[] = [
   { to: '/', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
+  { to: '/swipe', label: 'Swipe', icon: <Heart className="w-5 h-5" /> },
   { to: '/downloads', label: 'Downloads', icon: <Download className="w-5 h-5" /> },
   { to: '/library', label: 'Library', icon: <Disc3 className="w-5 h-5" /> },
   { to: '/discover', label: 'Discover', icon: <Compass className="w-5 h-5" /> },
-  { to: '/settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
 ];
 
 export function MobileNav() {

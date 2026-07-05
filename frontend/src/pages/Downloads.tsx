@@ -122,17 +122,17 @@ function PipelineItem({ album, onDownloadNow, isDownloadingNow }: PipelineItemPr
           </span>
           {/* Relative time */}
           <span className="text-[11px] text-muted">
-            {formatRelativeTime(album.created_at)}
+            {formatRelativeTime(album.status === 'downloaded' && album.downloaded_at ? album.downloaded_at : album.created_at)}
           </span>
         </div>
 
-        {/* Progress bar for downloading items */}
+        {/* Indeterminate progress bar for downloading items */}
         {album.status === 'downloading' && (
-          <div className="w-full bg-soft-stone rounded-full h-1.5 mt-1.5 overflow-hidden">
-            <div
-              className="bg-action-blue h-1.5 rounded-full animate-pulse"
-              style={{ width: '60%' }}
-            />
+          <div className="mt-1.5">
+            <div className="w-full bg-soft-stone rounded-full h-1.5 overflow-hidden">
+              <div className="bg-action-blue h-1.5 rounded-full animate-pulse w-full" />
+            </div>
+            <p className="text-[10px] text-muted mt-0.5">Downloading…</p>
           </div>
         )}
       </div>
@@ -315,8 +315,8 @@ export function Downloads() {
 
         <EmptyState
           icon={<Download className="w-16 h-16" />}
-          title="No downloads yet"
-          description="Albums will appear here once the rule engine queues them. Configure your rules in Settings to get started."
+          title="No Downloads Yet"
+          description="Albums queued for download will appear here. Use the Discover page to find music or wait for the rule engine to find matches."
         />
       </div>
     );
@@ -330,8 +330,11 @@ export function Downloads() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl text-ink">Downloads</h1>
-          <p className="text-sm text-body-muted mt-1">
-            {isRefetching ? 'Refreshing…' : 'Live pipeline view'}
+          <p className="text-sm text-body-muted mt-1 flex items-center gap-2">
+            Live pipeline view
+            {isRefetching && (
+              <span className="inline-block w-2 h-2 rounded-full bg-coral animate-pulse" />
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -367,7 +370,7 @@ export function Downloads() {
             renderSectionItems(downloading, MAX_VISIBLE_PER_SECTION)
           ) : (
             <div className="py-8 text-center">
-              <p className="text-sm text-muted">No active downloads</p>
+              <p className="text-sm text-muted">No active downloads. Albums will appear here when the download pipeline picks them up.</p>
             </div>
           )}
         </div>
@@ -388,7 +391,7 @@ export function Downloads() {
             renderSectionItems(upNext, MAX_VISIBLE_PER_SECTION)
           ) : (
             <div className="py-8 text-center">
-              <p className="text-sm text-muted">Nothing queued</p>
+              <p className="text-sm text-muted">Queue is empty. Albums queued by the rule engine or manually added will appear here.</p>
             </div>
           )}
         </div>
@@ -409,7 +412,7 @@ export function Downloads() {
             renderSectionItems(downloaded, MAX_VISIBLE_PER_SECTION)
           ) : (
             <div className="py-8 text-center">
-              <p className="text-sm text-muted">No completed downloads yet</p>
+              <p className="text-sm text-muted">No downloads yet. Albums will appear here once downloaded and imported.</p>
             </div>
           )}
         </div>

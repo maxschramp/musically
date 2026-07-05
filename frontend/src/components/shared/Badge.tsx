@@ -46,10 +46,11 @@ const statusConfig: Record<AlbumStatus, { label: string; bg: string; text: strin
 
 export function Badge({ status, className = '' }: BadgeProps) {
   const config = statusConfig[status];
+  const isDownloading = status === 'downloading';
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium transition-transform duration-200 ${config.bg} ${config.text} ${isDownloading ? 'animate-pulse' : ''} ${className}`}
     >
       <span className={`inline-block w-1.5 h-1.5 rounded-full ${config.dot}`} />
       {config.label}

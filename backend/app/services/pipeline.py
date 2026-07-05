@@ -23,6 +23,7 @@ from app.models.album import Album, AlbumStatus, QueueType
 from app.models.artist import Artist
 from app.models.setting import Setting
 from app.services.beets import BeetsService
+from app.services.event_bus import event_bus
 from app.services.notifications import NotificationService
 from app.services.qobuz import QobuzService
 from app.services.tagger import TaggerService
@@ -178,6 +179,8 @@ class DownloadPipeline:
                 album.retry_count += 1
                 await db.commit()
 
+                event_bus.publish("album_status", {"album_id": str(album_id), "status": "downloading"})
+
                 temp_dir = await self._get_setting(db, "qobuz_temp_download_directory", "/downloads")
                 dest_path = Path(temp_dir) / str(album_id)
 
@@ -191,6 +194,8 @@ class DownloadPipeline:
                     album.status = AlbumStatus.STALLED
                     album.next_retry_at = self.schedule_retry(album.retry_count)
                     await db.commit()
+
+                    event_bus.publish("album_status", {"album_id": str(album_id), "status": "stalled", "reason": "Not found on Qobuz"})
 
                     if notify_stalled:
                         await self.notifier.notify_stalled(
@@ -221,6 +226,8 @@ class DownloadPipeline:
                     album.status = AlbumStatus.STALLED
                     album.next_retry_at = self.schedule_retry(album.retry_count)
                     await db.commit()
+
+                    event_bus.publish("album_status", {"album_id": str(album_id), "status": "stalled", "reason": "Download failed"})
 
                     if notify_error:
                         await self.notifier.notify_error(
@@ -277,6 +284,8 @@ class DownloadPipeline:
                     album.next_retry_at = None  # Don't auto-retry — needs human review
                     await db.commit()
 
+                    event_bus.publish("album_status", {"album_id": str(album_id), "status": "stalled", "reason": "beets import failed"})
+
                     if notify_error:
                         await self.notifier.notify_error(
                             "beets import failed (manual review needed)",
@@ -303,6 +312,8 @@ class DownloadPipeline:
                 album.downloaded_at = _utcnow()
                 album.next_retry_at = None
                 await db.commit()
+
+                event_bus.publish("album_status", {"album_id": str(album_id), "status": "downloaded"})
 
                 # Step 7: Update artist library count
                 await self._increment_artist_albums(db, album.artist_name)
@@ -342,6 +353,8 @@ class DownloadPipeline:
                         album.status = AlbumStatus.STALLED
                         album.next_retry_at = self.schedule_retry(album.retry_count)
                         await db.commit()
+
+                        event_bus.publish("album_status", {"album_id": str(album_id), "status": "stalled", "reason": "Unexpected error"})
                 except Exception:
                     logger.exception("Failed to update album status after error")
 

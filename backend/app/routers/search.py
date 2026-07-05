@@ -1,4 +1,12 @@
-"""Search router — unified search across MusicBrainz, Spotify, and Qobuz."""
+"""Search router — unified search across MusicBrainz, Spotify, and Qobuz.
+
+Supports:
+  - Split-query parsing: when the query has 2+ words, the last word(s)
+    are interpreted as the album name and the rest as the artist name
+    for a more targeted second search.
+  - Artist albums endpoint: ``GET /api/search/artist-albums`` returns
+    all albums by a given artist from any configured source.
+"""
 
 from __future__ import annotations
 
@@ -77,6 +85,47 @@ def _normalize_qobuz(item: dict) -> SearchResult:
         qobuz_id=item.get("qobuz_id"),
         year=item.get("year"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Library / queue status checking
+# ---------------------------------------------------------------------------
+
+# Key used for deduplication: (source, type, artist_name, title, name)
+def _dedup_key(r: SearchResult) -> tuple[str, str, str, str, str]:
+    """Return a stable deduplication key for a SearchResult."""
+    return (
+        r.source,
+        r.type,
+        (r.artist_name or "").lower(),
+        (r.title or "").lower(),
+        (r.name or "").lower(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Split-query helper
+# ---------------------------------------------------------------------------
+
+def _split_query(query: str) -> tuple[str, str] | None:
+    """Split a multi-word query into (artist_part, album_part).
+
+    Returns ``None`` if the query is a single word (no split needed).
+
+    Heuristic: the last word is treated as the album name, all preceding
+    words as the artist name.  For example:
+
+        "vince staples summertime" → ("vince staples", "summertime")
+        "the beatles abbey road"   → ("the beatles", "abbey road")
+        "pink floyd dark side of the moon"
+            → ("pink floyd dark side of the", "moon")
+    """
+    words = query.strip().split()
+    if len(words) < 2:
+        return None
+    artist_part = " ".join(words[:-1])
+    album_part = words[-1]
+    return artist_part, album_part
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +288,11 @@ async def search(
 
     Queries each configured source concurrently and returns normalised
     results annotated with library/queue membership flags.
+
+    When the query has 2+ words, the search also performs a split query:
+    the last word is treated as the album name and the preceding words
+    as the artist name.  Results from both searches are merged and
+    deduplicated.
     """
     sources = [s.strip().lower() for s in source.split(",") if s.strip()]
     search_type = type.strip().lower()
@@ -248,21 +302,34 @@ async def search(
     all_results: list[SearchResult] = []
     warnings: list[str] = []
 
-    # Build per-source coroutines
+    # ---- Build the primary search coroutines ----
     coros: list = []
     source_names: list[str] = []
 
-    if "musicbrainz" in sources:
-        coros.append(_search_musicbrainz(q, search_type))
-        source_names.append("musicbrainz")
+    def _add_source_coros(query: str, label: str = "") -> None:
+        """Add search coroutines for a given query string."""
+        suffix = f" [{label}]" if label else ""
+        if "musicbrainz" in sources:
+            coros.append(_search_musicbrainz(query, search_type))
+            source_names.append(f"musicbrainz{suffix}")
+        if "spotify" in sources:
+            coros.append(_search_spotify(query, search_type))
+            source_names.append(f"spotify{suffix}")
+        if "qobuz" in sources:
+            coros.append(_search_qobuz(query, search_type))
+            source_names.append(f"qobuz{suffix}")
 
-    if "spotify" in sources:
-        coros.append(_search_spotify(q, search_type))
-        source_names.append("spotify")
+    # Primary search: full query as-is
+    _add_source_coros(q)
 
-    if "qobuz" in sources:
-        coros.append(_search_qobuz(q, search_type))
-        source_names.append("qobuz")
+    # Split-query search (only for album or both searches with 2+ words)
+    split_parts = _split_query(q)
+    if split_parts and search_type in ("album", "both"):
+        artist_part, album_part = split_parts
+        # Use MusicBrainz artist+release syntax for the split search
+        split_query = f'artist:"{artist_part}" AND release:"{album_part}"'
+        _add_source_coros(split_query, label="split")
+        logger.info("Split query: artist=%r album=%r → %s", artist_part, album_part, split_query)
 
     if not coros:
         return SearchResponse(query=q, results=[], warnings=["No valid sources specified"])
@@ -279,7 +346,168 @@ async def search(
         if warn:
             warnings.append(warn)
 
+    # Deduplicate by (source, type, artist_name, title, name)
+    seen: set[tuple[str, str, str, str, str]] = set()
+    deduped: list[SearchResult] = []
+    for r in all_results:
+        key = _dedup_key(r)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    all_results = deduped
+
     # Enrich with library / queue status
     await _enrich_library_status(db, all_results)
 
     return SearchResponse(query=q, results=all_results, warnings=warnings)
+
+
+# ---------------------------------------------------------------------------
+# Artist albums endpoint
+# ---------------------------------------------------------------------------
+
+
+async def _search_artist_albums_musicbrainz(
+    artist_name: str,
+) -> tuple[list[SearchResult], str | None]:
+    """Search MusicBrainz for all releases by an artist."""
+    svc = MusicBrainzService()
+    try:
+        query = f'artist:"{artist_name}"'
+        items = await svc.search(query, "album")
+        # Re-normalize: override artist_name to keep query artist consistent
+        results: list[SearchResult] = []
+        for item in items:
+            sr = _normalize_musicbrainz(item, source="musicbrainz")
+            sr.artist_name = artist_name
+            results.append(sr)
+        return results, None
+    except Exception as exc:
+        logger.warning("MusicBrainz artist-albums search failed: %s", exc)
+        return [], f"MusicBrainz: {exc}"
+    finally:
+        await svc.close()
+
+
+async def _search_artist_albums_spotify(
+    artist_name: str,
+) -> tuple[list[SearchResult], str | None]:
+    """Search Spotify for albums by an artist."""
+    settings = get_settings()
+    if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
+        return [], "Spotify: client_id/client_secret not configured"
+
+    svc = SpotifyService(
+        client_id=settings.SPOTIFY_CLIENT_ID,
+        client_secret=settings.SPOTIFY_CLIENT_SECRET,
+    )
+    try:
+        items = await svc.search(f'artist:"{artist_name}"', "album")
+        results: list[SearchResult] = []
+        for item in items:
+            sr = _normalize_spotify(item)
+            sr.artist_name = artist_name
+            results.append(sr)
+        return results, None
+    except Exception as exc:
+        logger.warning("Spotify artist-albums search failed: %s", exc)
+        return [], f"Spotify: {exc}"
+    finally:
+        await svc.close()
+
+
+async def _search_artist_albums_qobuz(
+    artist_name: str,
+) -> tuple[list[SearchResult], str | None]:
+    """Search Qobuz for albums by an artist."""
+    settings = get_settings()
+    if not settings.QOBUZ_EMAIL or not settings.QOBUZ_PASSWORD:
+        return [], "Qobuz: email/password not configured"
+
+    try:
+        svc = QobuzService(
+            email=settings.QOBUZ_EMAIL,
+            password=settings.QOBUZ_PASSWORD,
+        )
+    except ValueError as exc:
+        return [], f"Qobuz: {exc}"
+
+    try:
+        items = await svc.search(artist_name)
+        results: list[SearchResult] = []
+        for item in items:
+            sr = _normalize_qobuz(item)
+            sr.artist_name = artist_name
+            results.append(sr)
+        return results, None
+    except Exception as exc:
+        logger.warning("Qobuz artist-albums search failed: %s", exc)
+        return [], f"Qobuz: {exc}"
+    finally:
+        await svc.close()
+
+
+@router.get("/search/artist-albums", response_model=SearchResponse)
+async def artist_albums(
+    artist_name: str = Query(..., min_length=1, description="Artist name to search for"),
+    source: str = Query("musicbrainz", alias="source", description="Comma-separated sources: musicbrainz,spotify,qobuz"),
+    db: AsyncSession = Depends(get_db),
+) -> SearchResponse:
+    """Search for all albums by a given artist across configured sources.
+
+    Returns a flat list of ``SearchResult`` objects enriched with
+    ``in_library`` and ``in_queue`` flags.
+
+    Example: ``GET /api/search/artist-albums?artist_name=Radiohead&source=musicbrainz,spotify``
+    """
+    sources = [s.strip().lower() for s in source.split(",") if s.strip()]
+    all_results: list[SearchResult] = []
+    warnings: list[str] = []
+
+    coros: list = []
+    source_names: list[str] = []
+
+    if "musicbrainz" in sources:
+        coros.append(_search_artist_albums_musicbrainz(artist_name))
+        source_names.append("musicbrainz")
+    if "spotify" in sources:
+        coros.append(_search_artist_albums_spotify(artist_name))
+        source_names.append("spotify")
+    if "qobuz" in sources:
+        coros.append(_search_artist_albums_qobuz(artist_name))
+        source_names.append("qobuz")
+
+    if not coros:
+        return SearchResponse(
+            query=f"artist:{artist_name}",
+            results=[],
+            warnings=["No valid sources specified"],
+        )
+
+    gathered = await asyncio.gather(*coros, return_exceptions=True)
+
+    for i, result in enumerate(gathered):
+        if isinstance(result, Exception):
+            warnings.append(f"{source_names[i]}: {result}")
+            continue
+        items, warn = result
+        all_results.extend(items)
+        if warn:
+            warnings.append(warn)
+
+    # Deduplicate
+    seen: set[tuple[str, str, str, str, str]] = set()
+    deduped: list[SearchResult] = []
+    for r in all_results:
+        key = _dedup_key(r)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+
+    await _enrich_library_status(db, deduped)
+
+    return SearchResponse(
+        query=f"artist:{artist_name}",
+        results=deduped,
+        warnings=warnings,
+    )

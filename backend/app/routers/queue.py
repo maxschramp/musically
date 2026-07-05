@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.album import Album, AlbumStatus, QueueType
 from app.models.artist import Artist
+from app.services.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +341,8 @@ async def approve_queue_item(
     # Dispatch download immediately
     _try_dispatch(queue_id)
 
+    event_bus.publish("queue_changed", {"album_id": str(queue_id), "action": "approved"})
+
     return _album_to_response(album)
 
 
@@ -369,6 +372,8 @@ async def promote_queue_item(
     # Dispatch immediately
     _try_dispatch(queue_id)
 
+    event_bus.publish("queue_changed", {"album_id": str(queue_id), "action": "promoted"})
+
     return _album_to_response(album)
 
 
@@ -390,6 +395,9 @@ async def reject_queue_item(
     album.next_retry_at = None
     await db.commit()
     await db.refresh(album)
+
+    event_bus.publish("queue_changed", {"album_id": str(queue_id), "action": "rejected"})
+
     return _album_to_response(album)
 
 

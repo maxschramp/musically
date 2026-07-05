@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.routers.albums import router as albums_router
 from app.routers.artists import router as artists_router
 from app.routers.database import router as database_router
+from app.routers.events import router as events_router
 from app.routers.health import router as health_router
 from app.routers.lastfm import router as lastfm_router
 from app.routers.logs import router as logs_router
@@ -33,3 +34,4 @@ api_router.include_router(notifications_router, tags=["notifications"])
 api_router.include_router(logs_router, tags=["logs"])
 api_router.include_router(tasks_router, tags=["tasks"])
 api_router.include_router(database_router, tags=["database"])
+api_router.include_router(events_router, tags=["events"])
