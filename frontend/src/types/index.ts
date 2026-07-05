@@ -20,6 +20,7 @@ export interface Album {
   next_retry_at: string | null;
   downloaded_at: string | null;
   created_at: string;
+  track_count: number;
 }
 
 export interface Artist {

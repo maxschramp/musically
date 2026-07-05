@@ -3,20 +3,26 @@
 // Searchable album art grid with API integration
 // ============================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Disc3,
   Search,
   CheckCircle,
   XCircle,
   Music,
+  Trash2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/shared/Card';
+import { Button } from '@/components/shared/Button';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Modal } from '@/components/shared/Modal';
 import { useApiQuery } from '@/hooks/useApi';
+import { apiClient } from '@/api/client';
 import { formatDate, truncate } from '@/utils/format';
 import type {
   Album,
@@ -34,13 +40,24 @@ interface AlbumCardProps {
   album: Album;
   index: number;
   onClick: () => void;
+  selectMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-function AlbumCard({ album, index: _index, onClick }: AlbumCardProps) {
+function AlbumCard({ album, index: _index, onClick, selectMode = false, isSelected = false, onToggleSelect }: AlbumCardProps) {
   const [imgError, setImgError] = useState(false);
 
+  const handleClick = () => {
+    if (selectMode && onToggleSelect) {
+      onToggleSelect(album.id);
+    } else {
+      onClick();
+    }
+  };
+
   return (
-    <Card padding="sm" onClick={onClick}>
+    <Card padding="sm" onClick={handleClick}>
       <div className="aspect-square rounded-sm bg-soft-stone flex items-center justify-center mb-3 overflow-hidden relative">
         <img
           src={`/api/albums/${album.id}/artwork`}
@@ -52,6 +69,19 @@ function AlbumCard({ album, index: _index, onClick }: AlbumCardProps) {
         {imgError && (
           <Disc3 className="w-10 h-10 text-muted" />
         )}
+        {/* Select checkbox overlay */}
+        {selectMode && (
+          <div className="absolute top-2 left-2 z-10">
+            {isSelected ? (
+              <CheckSquare className="w-5 h-5 text-coral drop-shadow-sm" />
+            ) : (
+              <Square className="w-5 h-5 text-white/70 drop-shadow-sm" />
+            )}
+          </div>
+        )}
+        {selectMode && isSelected && (
+          <div className="absolute inset-0 bg-coral/10 rounded-sm" />
+        )}
       </div>
       <p className="text-sm font-medium text-ink truncate" title={album.title}>
         {truncate(album.title, 30)}
@@ -59,6 +89,9 @@ function AlbumCard({ album, index: _index, onClick }: AlbumCardProps) {
       <p className="text-xs text-muted truncate mt-0.5" title={album.artist_name}>
         {album.artist_name}
       </p>
+      {album.track_count > 0 && (
+        <p className="text-xs text-muted mt-0.5">{album.track_count} track{album.track_count !== 1 ? 's' : ''}</p>
+      )}
       {album.downloaded_at && (
         <p className="text-xs text-body-muted mt-0.5">
           {formatDate(album.downloaded_at)}
@@ -157,6 +190,21 @@ export function Library() {
   const [page, setPage] = useState(1);
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
 
+  // Filter and select mode state
+  const [trackFilter, setTrackFilter] = useState<'all' | 'singles' | 'eps' | 'albums'>('all');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const trackFilterParams = useMemo(() => {
+    switch (trackFilter) {
+      case 'singles': return { min_tracks: 1, max_tracks: 3 };
+      case 'eps': return { min_tracks: 4, max_tracks: 7 };
+      case 'albums': return { min_tracks: 8 };
+      default: return {};
+    }
+  }, [trackFilter]);
+
   // Debounce search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -173,14 +221,32 @@ export function Library() {
     error,
     refetch,
   } = useApiQuery<PaginatedResponse<Album>>(
-    ['albums', debouncedSearch, page],
+    ['albums', debouncedSearch, page, trackFilter],
     '/albums',
     {
       search: debouncedSearch || undefined,
       page,
       limit: 50,
+      ...trackFilterParams,
     },
   );
+
+  // --- Detail Queries (enabled only when an album is selected) ---
+  const queryClient = useQueryClient();
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      apiClient.post<{ deleted: number; errors: string[] }>('/library/bulk-delete', {
+        album_ids: ids,
+        delete_files: true,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['albums'] });
+      setSelectedIds(new Set());
+      setSelectMode(false);
+      setDeleteConfirmOpen(false);
+    },
+  });
 
   // --- Album Detail Queries (enabled only when an album is selected) ---
   const {
@@ -246,6 +312,69 @@ export function Library() {
         />
       </div>
 
+      {/* Filter Chips */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted mr-1">Tracks:</span>
+        {([
+          { key: 'all', label: 'All' },
+          { key: 'singles', label: 'Singles (1–3)' },
+          { key: 'eps', label: 'EPs (4–7)' },
+          { key: 'albums', label: 'Albums (8+)' },
+        ] as const).map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setTrackFilter(key);
+              setPage(1);
+            }}
+            className={`px-3 py-1.5 rounded-pill text-xs font-medium transition-colors duration-150 cursor-pointer ${
+              trackFilter === key
+                ? 'bg-ink text-white'
+                : 'bg-soft-stone text-muted hover:bg-hairline'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Header with Select Toggle */}
+      {!isLoading && !isError && albums.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted">
+            {total} album{total !== 1 ? 's' : ''}
+          </p>
+          <div className="flex items-center gap-2">
+            {selectMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedIds.size === albums.length) {
+                    setSelectedIds(new Set());
+                  } else {
+                    setSelectedIds(new Set(albums.map((a) => a.id)));
+                  }
+                }}
+                className="text-xs text-muted hover:text-ink transition-colors"
+              >
+                {selectedIds.size === albums.length ? 'Deselect All' : 'Select All'}
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelectMode(!selectMode);
+                setSelectedIds(new Set());
+              }}
+            >
+              {selectMode ? 'Cancel' : 'Select'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Loading State */}
       {isLoading && (
         <Card padding="lg">
@@ -289,6 +418,19 @@ export function Library() {
                 album={album}
                 index={i}
                 onClick={() => setSelectedAlbum(album)}
+                selectMode={selectMode}
+                isSelected={selectedIds.has(album.id)}
+                onToggleSelect={(id) => {
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) {
+                      next.delete(id);
+                    } else {
+                      next.add(id);
+                    }
+                    return next;
+                  });
+                }}
               />
             ))}
           </div>
@@ -319,6 +461,65 @@ export function Library() {
           )}
         </>
       )}
+
+      {/* Select Mode Bottom Bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-primary text-on-primary shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {selectedIds.size} album{selectedIds.size !== 1 ? 's' : ''} selected
+            </span>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectMode(false);
+                  setSelectedIds(new Set());
+                }}
+                className="text-on-primary! hover:bg-white/10"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                leftIcon={<Trash2 className="w-4 h-4" />}
+                loading={bulkDeleteMutation.isPending}
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Delete Selected
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
+        <div className="p-6">
+          <h3 className="text-lg font-medium text-ink mb-2">
+            Delete {selectedIds.size} album{selectedIds.size !== 1 ? 's' : ''}?
+          </h3>
+          <p className="text-sm text-body-muted mb-6">
+            This will permanently delete the selected albums and their files from disk.
+            This action cannot be undone.
+          </p>
+          <div className="flex items-center justify-end gap-3">
+            <Button variant="ghost" size="sm" onClick={() => setDeleteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={bulkDeleteMutation.isPending}
+              onClick={() => bulkDeleteMutation.mutate([...selectedIds])}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ============================================ */}
       {/* Album Detail Modal                          */}
