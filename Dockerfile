@@ -91,6 +91,7 @@ COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
 # Copy nginx configuration
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/default.ssl.conf /etc/nginx/ssl/default.ssl.conf
 
 # Remove default nginx site (conflicts with our config on port 80)
 RUN rm -f /etc/nginx/sites-enabled/default

@@ -90,4 +90,20 @@ if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
     generate_cert || true
 fi
 
+# ---------------------------------------------------------------------------
+# Enable HTTPS nginx config only if the certificate exists
+# ---------------------------------------------------------------------------
+SSL_NGINX_CONF="/etc/nginx/conf.d/default.ssl.conf"
+SSL_NGINX_TEMPLATE="/etc/nginx/ssl/default.ssl.conf"
+
+if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+    if [ ! -f "$SSL_NGINX_CONF" ] && [ -f "$SSL_NGINX_TEMPLATE" ]; then
+        cp "$SSL_NGINX_TEMPLATE" "$SSL_NGINX_CONF"
+        echo "HTTPS enabled — nginx listening on port 443"
+    fi
+else
+    rm -f "$SSL_NGINX_CONF"
+    echo "HTTPS not available — cert not found, nginx will serve HTTP only"
+fi
+
 exec "$@"
