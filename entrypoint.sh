@@ -131,7 +131,8 @@ cat << "BOOTEOF"
   ║          Self-hosted music discovery & download automation        ║
   ║                                                                  ║
   ╠══════════════════════════════════════════════════════════════════╣
-  ║  Build    : ${BUILD_DATE} (${BUILD_REF})            ║
+  ║  Version  : v${VERSION:-?.?.?} (${BUILD_REF:-dev})                    ║
+  ║  Built    : ${BUILD_DATE:-unknown}                                    ║
   ║  HTTP     : port 80 (always on)                                  ║
   ║  HTTPS    : ${HTTPS_STATUS}                       ║
   ║  Docs     : /docs  |  /redoc                                    ║

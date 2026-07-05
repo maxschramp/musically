@@ -106,8 +106,10 @@ RUN chmod +x /entrypoint.sh
 # Build metadata for the bootup banner
 ARG BUILD_DATE=unknown
 ARG BUILD_REF=dev
+ARG VERSION=0.0.0
 ENV BUILD_DATE=${BUILD_DATE}
 ENV BUILD_REF=${BUILD_REF}
+ENV VERSION=${VERSION}
 
 # Copy backend application code
 COPY backend/ /app/
