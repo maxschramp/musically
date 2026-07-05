@@ -351,12 +351,15 @@ class RuleEngine:
     # ------------------------------------------------------------------
 
     async def _evaluate_r6(self, result: RuleResult) -> None:
-        """R6: Queue tracks from discover playlists with manual review.
+        """R6: Queue albums from discover playlists with >N tracks for manual review.
 
-        For each active DISCOVER playlist, creates a MANUAL queue entry for
-        every unique album found in its tracks that isn't already in the
-        pipeline.
+        Aggregates track counts across all active DISCOVER playlists and only
+        queues albums that have more than ``swipe_min_track_count`` tracks
+        (default 4). Singles and short EPs are skipped to keep the swipe queue
+        focused on full-length releases.
         """
+        min_tracks = await self._get_setting_int("swipe_min_track_count", 4)
+
         stmt = select(Playlist).where(
             Playlist.playlist_type == PlaylistType.DISCOVER,
             Playlist.is_active == True,  # noqa: E712
@@ -364,51 +367,120 @@ class RuleEngine:
         rows = await self.db.execute(stmt)
         playlists = rows.scalars().all()
 
-        rule_fired = False
-        for playlist in playlists:
-            track_stmt = select(PlaylistTrack).where(
-                PlaylistTrack.playlist_id == playlist.id,
+        playlist_ids = [p.id for p in playlists]
+        if not playlist_ids:
+            return
+
+        # Count tracks per (artist, album) across all discover playlists
+        track_count_stmt = (
+            select(
+                PlaylistTrack.artist_name,
+                PlaylistTrack.album_name,
+                func.count(PlaylistTrack.id).label("track_count"),
             )
-            track_rows = await self.db.execute(track_stmt)
-            tracks = track_rows.scalars().all()
+            .where(
+                PlaylistTrack.playlist_id.in_(playlist_ids),
+                PlaylistTrack.album_name != "",
+                PlaylistTrack.artist_name != "",
+            )
+            .group_by(
+                func.lower(PlaylistTrack.artist_name),
+                func.lower(PlaylistTrack.album_name),
+            )
+            .having(func.count(PlaylistTrack.id) > min_tracks)
+        )
+        track_rows = await self.db.execute(track_count_stmt)
+        candidates = track_rows.all()
 
-            for track in tracks:
-                if not track.album_name or not track.artist_name:
-                    continue
-
-                try:
-                    async with self.db.begin_nested():
-                        album = await self._get_or_create_album(
-                            artist_name=track.artist_name,
-                            album_title=track.album_name,
-                            queue_type=QueueType.MANUAL,
-                            reason=f"Discover: {playlist.name}",
-                        )
-                except IntegrityError:
-                    logger.warning(
-                        "R6: Skipping duplicate '%s - %s'",
-                        track.artist_name,
-                        track.album_name,
+        rule_fired = False
+        for artist_name, album_name, track_count in candidates:
+            try:
+                async with self.db.begin_nested():
+                    album = await self._get_or_create_album(
+                        artist_name=artist_name,
+                        album_title=album_name,
+                        queue_type=QueueType.MANUAL,
+                        reason=f"Discover: {track_count} tracks",
                     )
-                    continue
+            except IntegrityError:
+                await self.db.rollback()
+                logger.warning(
+                    "R6: Skipping duplicate '%s - %s'",
+                    artist_name,
+                    album_name,
+                )
+                continue
 
-                if album is not None:
-                    result.albums_queued_manual += 1
-                    rule_fired = True
-                    logger.info(
-                        "R6: Queued '%s - %s' (discover playlist '%s')",
-                        track.artist_name,
-                        track.album_name,
-                        playlist.name,
-                    )
+            if album is not None:
+                result.albums_queued_manual += 1
+                rule_fired = True
+                logger.info(
+                    "R6: Queued '%s - %s' (%d tracks from discover playlists)",
+                    artist_name,
+                    album_name,
+                    track_count,
+                )
 
         if rule_fired:
             result.rules_fired.append("R6")
 
         logger.info(
-            "R6: processed %d playlists, queued %d albums",
-            len(playlists), result.albums_queued_manual,
+            "R6: processed %d playlists, found %d albums with >%d tracks, queued %d",
+            len(playlists),
+            len(candidates),
+            min_tracks,
+            result.albums_queued_manual,
         )
+
+        # --- Retroactive cleanup: remove queued albums that no longer meet the threshold ---
+        # Find all manual-queued albums and check if they still have enough tracks.
+        # Only cleans up queue_type=MANUAL albums (from R6), not auto or watch_folder.
+        # Limit to 500 per run to keep performance predictable.
+        cleanup_where = (
+            Album.status == AlbumStatus.QUEUED,
+            Album.queue_type == QueueType.MANUAL,
+        )
+        total_queued = (
+            await self.db.execute(select(func.count(Album.id)).where(*cleanup_where))
+        ).scalar()
+        logger.debug(
+            "R6 cleanup: checking %d queued albums (limit 500), threshold=%d",
+            total_queued,
+            min_tracks,
+        )
+
+        cleanup_stmt = (
+            select(Album)
+            .where(*cleanup_where)
+            .limit(500)
+        )
+        cleanup_rows = await self.db.execute(cleanup_stmt)
+        queued_albums = cleanup_rows.scalars().all()
+
+        removed = 0
+        for album in queued_albums:
+            # Count how many playlist tracks exist for this album
+            count_stmt = select(func.count(PlaylistTrack.id)).where(
+                func.lower(PlaylistTrack.artist_name) == func.lower(album.artist_name),
+                func.lower(PlaylistTrack.album_name) == func.lower(album.title),
+            )
+            count_result = await self.db.execute(count_stmt)
+            track_count = count_result.scalar() or 0
+
+            if track_count < min_tracks:
+                await self.db.delete(album)
+                removed += 1
+                logger.info(
+                    "R6 cleanup: removed '%s - %s' (only %d tracks, threshold=%d)",
+                    album.artist_name,
+                    album.title,
+                    track_count,
+                    min_tracks,
+                )
+
+        if removed:
+            await self.db.flush()
+            logger.info("R6 cleanup: removed %d albums below track threshold", removed)
 
     # ------------------------------------------------------------------
     # R7: File appears in watch folder → QUEUE (tag+move)  [STUB]
