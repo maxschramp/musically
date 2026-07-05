@@ -21,6 +21,9 @@ export PATH="$PG_BIN:$PATH"
 echo "Fixing volume permissions..."
 mkdir -p /config /music /downloads
 chown musically:musically /config /music /downloads 2>/dev/null || true
+# Ensure beets config dir is writable by the musically user
+mkdir -p /config/beets
+chown -R musically:musically /config/beets 2>/dev/null || true
 # Ensure postgres data dirs exist and have correct ownership
 mkdir -p /config/postgres /config/redis /run/postgresql
 chown -R postgres:postgres /config/postgres /run/postgresql 2>/dev/null || true
