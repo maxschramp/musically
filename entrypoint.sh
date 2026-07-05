@@ -2,17 +2,46 @@
 # =============================================================================
 # Musically — Container Entrypoint
 # =============================================================================
-# 1. Generate a self-signed SSL certificate for LAN HTTPS (if none exists)
-# 2. Exec the provided command (supervisord by default)
-#
-# The self-signed cert enables Spotify OAuth on LAN-only setups.
-# Spotify requires https:// redirect URIs; it never connects to your
-# server — only your browser does. Accept the browser warning once.
-#
-# Cert generation is best-effort: if it fails, the container still starts
-# and the app works fine on HTTP — only Spotify OAuth needs HTTPS.
+# 1. Seed beets config directory with defaults if missing
+# 2. Generate a self-signed SSL certificate for LAN HTTPS (if none exists)
+# 3. Exec the provided command (supervisord by default)
 # =============================================================================
 
+# ---------------------------------------------------------------------------
+# Seed beets config directory
+# ---------------------------------------------------------------------------
+BEETS_DIR="/config/beets"
+if [ ! -f "$BEETS_DIR/config.yaml" ]; then
+    echo "=== Seeding default beets configuration ==="
+    mkdir -p "$BEETS_DIR"
+    cat > "$BEETS_DIR/config.yaml" << 'YAMLEOF'
+directory: /music/library
+library: /config/beets/library.db
+
+import:
+  copy: yes
+  move: no
+  write: yes
+  autotag: yes
+  quiet: yes
+  timid: no
+  resume: no
+  incremental: no
+
+paths:
+  default: $albumartist/$album/$track $artist - $title
+
+plugins: []
+
+ui:
+  color: yes
+YAMLEOF
+    echo "beets config seeded at $BEETS_DIR/config.yaml"
+fi
+
+# ---------------------------------------------------------------------------
+# Self-signed SSL certificate for LAN HTTPS
+# ---------------------------------------------------------------------------
 SSL_DIR="/config/ssl"
 CERT_FILE="$SSL_DIR/musically.crt"
 KEY_FILE="$SSL_DIR/musically.key"
