@@ -130,6 +130,14 @@ body {
   background-color: var(--color-coral);
 }
 
+.muted-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background-color: var(--color-muted);
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

@@ -7,6 +7,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { useEvents } from '@/hooks/useEvents';
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -25,6 +26,7 @@ const pageTitles: Record<string, string> = {
 export function Shell() {
   const isMobile = useIsMobile();
   const location = useLocation();
+  const { isConnected } = useEvents();
 
   const currentTitle = pageTitles[location.pathname] ?? 'Musically';
 
@@ -60,7 +62,10 @@ export function Shell() {
                   {currentTitle}
                 </h1>
                 <div className="flex items-center gap-3">
-                  <span className="coral-dot" title="System Online" />
+                  <span
+                    className={isConnected ? 'coral-dot' : 'muted-dot'}
+                    title={isConnected ? 'Live — SSE Connected' : 'SSE Disconnected'}
+                  />
                   <span className="text-xs text-muted">
                     Musically
                   </span>
