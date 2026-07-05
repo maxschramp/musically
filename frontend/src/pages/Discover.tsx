@@ -5,7 +5,7 @@
 
 import { useState, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Disc3, Plus, Music, RotateCw } from 'lucide-react';
+import { Search, Disc3, Plus, Music, RotateCw, Check, Library } from 'lucide-react';
 import { Card } from '@/components/shared/Card';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -34,8 +34,19 @@ const TYPES: { key: SearchType; label: string }[] = [
 // Queue Album Button
 // ============================================
 
-function QueueAlbumButton({ artistName, albumTitle }: { artistName: string; albumTitle?: string }) {
+function QueueAlbumButton({
+  artistName,
+  albumTitle,
+  inQueue = false,
+  inLibrary = false,
+}: {
+  artistName: string;
+  albumTitle?: string;
+  inQueue?: boolean;
+  inLibrary?: boolean;
+}) {
   const queryClient = useQueryClient();
+  const [justQueued, setJustQueued] = useState(false);
 
   const queueMutation = useMutation({
     mutationFn: () =>
@@ -46,9 +57,47 @@ function QueueAlbumButton({ artistName, albumTitle }: { artistName: string; albu
         reason: 'Manual add',
       }),
     onSuccess: () => {
+      // Flash the "Queued" state before invalidation refreshes
+      setJustQueued(true);
+      // Invalidate queue and ALL search queries so results reflect the new state
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+      // Reset the flash after a brief delay
+      setTimeout(() => setJustQueued(false), 1500);
     },
   });
+
+  // Determine button state
+  const isInLibrary = inLibrary;
+  const isInQueue = inQueue || justQueued;
+  const isPending = queueMutation.isPending;
+
+  if (isInLibrary) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        leftIcon={<Library className="w-3.5 h-3.5" />}
+        disabled
+      >
+        In Library
+      </Button>
+    );
+  }
+
+  if (isInQueue) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        leftIcon={<Check className="w-3.5 h-3.5" />}
+        disabled
+        className={justQueued ? 'text-deep-green border border-deep-green/30' : ''}
+      >
+        Queued
+      </Button>
+    );
+  }
 
   return (
     <Button
@@ -59,8 +108,8 @@ function QueueAlbumButton({ artistName, albumTitle }: { artistName: string; albu
         e.stopPropagation();
         queueMutation.mutate();
       }}
-      loading={queueMutation.isPending}
-      disabled={queueMutation.isPending}
+      loading={isPending}
+      disabled={isPending}
     >
       Queue
     </Button>
@@ -336,7 +385,12 @@ export function Discover() {
                 <div className="flex items-center gap-2 shrink-0">
                   <FollowButton artistName={result.artist_name} />
                   {result.type === 'album' && result.title && (
-                    <QueueAlbumButton artistName={result.artist_name} albumTitle={result.title} />
+                    <QueueAlbumButton
+                      artistName={result.artist_name}
+                      albumTitle={result.title}
+                      inQueue={result.in_queue}
+                      inLibrary={result.in_library}
+                    />
                   )}
                 </div>
               </div>
