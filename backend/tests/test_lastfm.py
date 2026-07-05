@@ -135,7 +135,7 @@ class TestFetchRecentTracks:
         assert result.tracks[0].track_name == "Song 1"
         assert result.tracks[0].artist_name == "Artist 1"
         assert result.tracks[0].album_name == "Album 1"
-        assert result.tracks[0].played_at == datetime(2023, 7, 1, 0, 30, tzinfo=timezone.utc)
+        assert result.tracks[0].played_at == datetime(2023, 7, 1, 0, 30)
 
     @pytest.mark.asyncio
     async def test_skip_now_playing(self, service: LastFMService) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 
@@ -146,7 +146,7 @@ class LastFMService:
             uts = date_info.get("uts")
             if uts is not None:
                 try:
-                    played_at = datetime.fromtimestamp(int(uts), tz=timezone.utc)
+                    played_at = datetime.utcfromtimestamp(int(uts))
                 except (ValueError, OSError):
                     continue
             else:
