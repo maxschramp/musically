@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,16 @@ router = APIRouter()
 async def health_check() -> dict:
     """Health check endpoint."""
     return {"status": "ok", "version": "0.1.0"}
+
+
+@router.get("/health/version")
+async def get_version() -> dict:
+    """Return the current application version and build info."""
+    return {
+        "version": os.environ.get("VERSION", "0.0.0"),
+        "build_date": os.environ.get("BUILD_DATE", "unknown"),
+        "build_ref": os.environ.get("BUILD_REF", "dev"),
+    }
 
 
 @router.get("/stats", response_model=StatsResponse)
