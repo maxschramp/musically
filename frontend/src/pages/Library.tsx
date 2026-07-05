@@ -22,11 +22,11 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Modal } from '@/components/shared/Modal';
 import { useApiQuery } from '@/hooks/useApi';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { apiClient } from '@/api/client';
 import { formatDate, truncate } from '@/utils/format';
 import type {
   Album,
-  PaginatedResponse,
   AlbumTracksResponse,
   MusicBrainzAlbumResponse,
   TrackComparisonRow,
@@ -187,7 +187,6 @@ function formatMs(ms: number): string {
 export function Library() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
 
   // Filter and select mode state
@@ -205,31 +204,40 @@ export function Library() {
     }
   }, [trackFilter]);
 
+  const queryParams = useMemo(() => ({
+    search: debouncedSearch || undefined,
+    ...trackFilterParams,
+  }), [debouncedSearch, trackFilterParams]);
+
+  const {
+    items: albums,
+    isLoading,
+    isLoadingMore,
+    isError,
+    error,
+    hasMore,
+    loaderRef,
+    refetch,
+    reset,
+    total,
+  } = useInfiniteScroll<Album>(
+    ['albums', debouncedSearch, trackFilter],
+    '/albums',
+    queryParams,
+  );
+
   // Debounce search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput);
-      setPage(1);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useApiQuery<PaginatedResponse<Album>>(
-    ['albums', debouncedSearch, page, trackFilter],
-    '/albums',
-    {
-      search: debouncedSearch || undefined,
-      page,
-      limit: 50,
-      ...trackFilterParams,
-    },
-  );
+  // Reset infinite scroll when search or filter changes
+  useEffect(() => {
+    reset();
+  }, [debouncedSearch, trackFilter, reset]);
 
   // --- Detail Queries (enabled only when an album is selected) ---
   const queryClient = useQueryClient();
@@ -275,11 +283,7 @@ export function Library() {
     { enabled: !!selectedAlbum },
   );
 
-  const albums = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = Math.ceil(total / 50);
-
-  const errorMessage = error?.message ?? 'Failed to load library.';
+  const errorMessage = (error as { message?: string })?.message ?? 'Failed to load library.';
 
   // Build comparison rows when both queries are loaded
   const detailLoading = tracksLoading || mbLoading;
@@ -326,7 +330,6 @@ export function Library() {
             type="button"
             onClick={() => {
               setTrackFilter(key);
-              setPage(1);
             }}
             className={`px-3 py-1.5 rounded-pill text-xs font-medium transition-colors duration-150 cursor-pointer ${
               trackFilter === key
@@ -435,28 +438,10 @@ export function Library() {
             ))}
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-4">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="px-3 py-1.5 text-sm rounded-sm border border-hairline text-ink hover:bg-soft-stone disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-muted">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="px-3 py-1.5 text-sm rounded-sm border border-hairline text-ink hover:bg-soft-stone disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
+          {/* Infinite scroll sentinel */}
+          {hasMore && (
+            <div ref={loaderRef} className="py-4 flex justify-center">
+              {isLoadingMore ? <LoadingSpinner size="sm" /> : null}
             </div>
           )}
         </>

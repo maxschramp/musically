@@ -11,10 +11,10 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Button } from '@/components/shared/Button';
-import { useApiQuery } from '@/hooks/useApi';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { apiClient } from '@/api/client';
 import { formatNumber } from '@/utils/format';
-import type { Artist, PaginatedResponse } from '@/types';
+import type { Artist } from '@/types';
 
 // ============================================
 // Subscribe Toggle
@@ -161,39 +161,40 @@ export function Artists() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [subscribedFilter, setSubscribedFilter] = useState(false);
-  const [page, setPage] = useState(1);
 
   // Debounce search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput);
-      setPage(1);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
   const {
-    data,
+    items: artists,
     isLoading,
+    isLoadingMore,
     isError,
     error,
+    hasMore,
+    loaderRef,
     refetch,
-  } = useApiQuery<PaginatedResponse<Artist>>(
-    ['artists', debouncedSearch, subscribedFilter, page],
+    reset,
+  } = useInfiniteScroll<Artist>(
+    ['artists', debouncedSearch, subscribedFilter],
     '/artists',
     {
       search: debouncedSearch || undefined,
       subscribed: subscribedFilter || undefined,
-      page,
-      limit: 50,
     },
   );
 
-  const artists = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = Math.ceil(total / 50);
+  // Reset infinite scroll when search or filter changes
+  useEffect(() => {
+    reset();
+  }, [debouncedSearch, subscribedFilter, reset]);
 
-  const errorMessage = error?.message ?? 'Failed to load artists.';
+  const errorMessage = (error as { message?: string })?.message ?? 'Failed to load artists.';
 
   const handleSubscriptionChanged = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['artists'] });
@@ -234,7 +235,6 @@ export function Artists() {
           type="button"
           onClick={() => {
             setSubscribedFilter(!subscribedFilter);
-            setPage(1);
           }}
           className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-pill text-sm font-medium transition-colors duration-150 cursor-pointer ${
             subscribedFilter
@@ -290,42 +290,26 @@ export function Artists() {
 
       {/* Artist List */}
       {!isLoading && !isError && artists.length > 0 && (
-        <Card padding="none">
-          <div className="divide-y divide-card-border">
-            {artists.map((artist) => (
-              <ArtistRow
-                key={artist.id}
-                artist={artist}
-                onSubscriptionChanged={handleSubscriptionChanged}
-              />
-            ))}
-          </div>
-        </Card>
-      )}
+        <>
+          <Card padding="none">
+            <div className="divide-y divide-card-border">
+              {artists.map((artist) => (
+                <ArtistRow
+                  key={artist.id}
+                  artist={artist}
+                  onSubscriptionChanged={handleSubscriptionChanged}
+                />
+              ))}
+            </div>
+          </Card>
 
-      {/* Pagination */}
-      {!isLoading && !isError && totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="px-3 py-1.5 text-sm rounded-sm border border-hairline text-ink hover:bg-soft-stone disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Previous
-          </button>
-          <span className="text-sm text-muted">
-            Page {page} of {totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="px-3 py-1.5 text-sm rounded-sm border border-hairline text-ink hover:bg-soft-stone disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Next
-          </button>
-        </div>
+          {/* Infinite scroll sentinel */}
+          {hasMore && (
+            <div ref={loaderRef} className="py-4 flex justify-center">
+              {isLoadingMore ? <LoadingSpinner size="sm" /> : null}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

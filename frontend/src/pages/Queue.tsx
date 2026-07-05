@@ -5,18 +5,18 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, X, RotateCw, ChevronLeft, ChevronRight, ListMusic, Trash2 } from 'lucide-react';
+import { Check, X, RotateCw, ListMusic, Trash2 } from 'lucide-react';
 import { apiClient } from '@/api/client';
-import { useApiQuery } from '@/hooks/useApi';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { Badge } from '@/components/shared/Badge';
 import { Button } from '@/components/shared/Button';
 import { Card } from '@/components/shared/Card';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
-import { PageLoading } from '@/components/shared/LoadingSpinner';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { formatDate } from '@/utils/format';
-import type { Album, PaginatedResponse } from '@/types';
+import type { Album } from '@/types';
 
 type QueueTab = 'manual' | 'stalled';
 
@@ -24,8 +24,6 @@ const TABS: { key: QueueTab; label: string }[] = [
   { key: 'manual', label: 'Pending' },
   { key: 'stalled', label: 'Stalled' },
 ];
-
-const PAGE_SIZE = 50;
 
 const EMPTY_MESSAGES: Record<QueueTab, { title: string; description: string }> = {
   manual: {
@@ -49,7 +47,6 @@ function ReasonTag({ reason }: { reason: string }) {
 
 export function Queue() {
   const [activeTab, setActiveTab] = useState<QueueTab>('manual');
-  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -61,8 +58,6 @@ export function Queue() {
   // Build query params: pending filters by type+status, stalled filters by status
   const queryParams = useMemo(() => {
     const params: Record<string, string | number | boolean | undefined> = {
-      page,
-      limit: PAGE_SIZE,
       sort: '-created_at',
     };
     if (activeTab === 'manual') {
@@ -72,10 +67,20 @@ export function Queue() {
       params.status = 'stalled';
     }
     return params;
-  }, [activeTab, page]);
+  }, [activeTab]);
 
-  const { data, isLoading, isError, refetch } = useApiQuery<PaginatedResponse<Album>>(
-    ['queue', activeTab, page],
+  const {
+    items,
+    isLoading,
+    isLoadingMore,
+    isError,
+    hasMore,
+    loaderRef,
+    refetch,
+    reset,
+    total,
+  } = useInfiniteScroll<Album>(
+    ['queue', activeTab],
     '/queue',
     queryParams,
   );
@@ -132,7 +137,7 @@ export function Queue() {
   const clearStalledMutation = useMutation({
     mutationFn: () => apiClient.post('/queue/clear-stalled'),
     onSuccess: () => {
-      setPage(1);
+      reset();
       invalidateQueue();
     },
   });
@@ -141,9 +146,9 @@ export function Queue() {
 
   const handleTabChange = useCallback((tab: QueueTab) => {
     setActiveTab(tab);
-    setPage(1);
     setSelected(new Set());
-  }, []);
+    reset();
+  }, [reset]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
@@ -155,24 +160,24 @@ export function Queue() {
   }, []);
 
   const toggleSelectAll = useCallback(() => {
-    if (!data) return;
     setSelected((prev) => {
-      if (prev.size === data.items.length) return new Set();
-      return new Set(data.items.map((item: Album) => item.id));
+      if (prev.size === items.length) return new Set();
+      return new Set(items.map((item: Album) => item.id));
     });
-  }, [data]);
+  }, [items]);
 
   // ---- Derived ----
 
-  const items: Album[] = data?.items ?? [];
-  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
   const allSelected = items.length > 0 && selected.size === items.length;
 
   // ---- Render ----
 
-  if (isLoading) return <PageLoading />;
+  if (isLoading) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <LoadingSpinner size="lg" label="Loading queue…" />
+    </div>
+  );
   if (isError) return <ErrorState onRetry={() => refetch()} />;
-  if (!data) return null;
 
   if (items.length === 0) {
     return (
@@ -262,11 +267,15 @@ export function Queue() {
           onApprove={(id) => approveMutation.mutate(id)}
           onReject={(id) => rejectMutation.mutate(id)}
           onRetry={(id) => retryMutation.mutate(id)}
-          page={page}
-          totalPages={totalPages}
-          totalItems={data.total}
-          onPageChange={setPage}
+          totalItems={total}
         />
+      )}
+
+      {/* Infinite scroll sentinel */}
+      {hasMore && (
+        <div ref={loaderRef} className="py-4 flex justify-center">
+          {isLoadingMore ? <LoadingSpinner size="sm" /> : null}
+        </div>
       )}
     </div>
   );
@@ -397,10 +406,7 @@ function DesktopTable({
   onApprove,
   onReject,
   onRetry,
-  page,
-  totalPages,
   totalItems,
-  onPageChange,
 }: {
   items: Album[];
   selected: Set<string>;
@@ -413,10 +419,7 @@ function DesktopTable({
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onRetry: (id: string) => void;
-  page: number;
-  totalPages: number;
   totalItems: number;
-  onPageChange: (page: number) => void;
 }) {
   return (
     <Card padding="none" className="overflow-hidden">
@@ -536,34 +539,12 @@ function DesktopTable({
         </table>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-card-border">
-          <span className="text-xs text-body-muted">
-            Page {page} of {totalPages} ({totalItems} items)
-          </span>
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onPageChange(Math.max(1, page - 1))}
-              disabled={page <= 1}
-              leftIcon={<ChevronLeft className="w-4 h-4" />}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onPageChange(Math.min(totalPages, page + 1))}
-              disabled={page >= totalPages}
-              rightIcon={<ChevronRight className="w-4 h-4" />}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Footer with item count */}
+      <div className="flex items-center justify-between px-4 py-3 border-t border-card-border">
+        <span className="text-xs text-body-muted">
+          {items.length} of {totalItems} items
+        </span>
+      </div>
     </Card>
   );
 }

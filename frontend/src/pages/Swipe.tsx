@@ -399,6 +399,13 @@ function SwipeCard({
                 decoding="async"
               />
             )}
+
+            {/* Track count pill */}
+            {album.track_count > 0 && (
+              <span className="absolute top-2 right-2 z-10 px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/70 text-white">
+                {album.track_count} tracks
+              </span>
+            )}
           </div>
 
           {/* Card body */}
