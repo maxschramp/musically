@@ -117,7 +117,17 @@ export function Swipe() {
 
       const album = currentAlbum;
 
-      // Bug 3 fix: fire mutation immediately — don't wait for animation
+      // Mark as swiped IMMEDIATELY (optimistic update) so the card is
+      // filtered from visibleItems before the API refetch returns.
+      // This prevents a race where the API removes the card but swipedIds
+      // hasn't been updated yet, causing the next-card ordering to shift.
+      setSwipedIds((prev) => {
+        const next = new Set(prev);
+        next.add(album.id);
+        return next;
+      });
+
+      // Fire mutation — triggers API refetch via invalidateQueue
       if (direction === 'right') {
         approveMutation.mutate(album.id);
       } else {
@@ -128,11 +138,6 @@ export function Swipe() {
       setFlippedCardId(null);
 
       setTimeout(() => {
-        setSwipedIds((prev) => {
-          const next = new Set(prev);
-          next.add(album.id);
-          return next;
-        });
         setExiting(null);
       }, EXIT_ANIMATION_MS);
     },
