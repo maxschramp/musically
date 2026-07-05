@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import desc, select
@@ -57,7 +57,7 @@ async def list_tasks() -> list[TaskInfo]:
             result = await db.execute(stmt)
             last_run = result.scalar_one_or_none()
 
-            base_time = last_run.started_at if last_run else datetime.now(timezone.utc)
+            base_time = last_run.started_at if last_run else datetime.utcnow()
             next_at = base_time + timedelta(minutes=interval_minutes) if interval_minutes > 0 else None
 
             tasks.append(
@@ -110,7 +110,7 @@ async def trigger_task(task_name: str, request: Request) -> TaskTriggerResponse:
         )
 
     run_id = uuid.uuid4()
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.utcnow()
 
     # Create initial TaskRun record
     async with app.database.async_session_factory() as db:
@@ -136,7 +136,7 @@ async def trigger_task(task_name: str, request: Request) -> TaskTriggerResponse:
             run = await db.get(TaskRun, run_id)
             if run:
                 run.status = "completed"
-                run.completed_at = datetime.now(timezone.utc)
+                run.completed_at = datetime.utcnow()
                 run.result_summary = f"Task '{task_name}' completed successfully."
                 await db.commit()
 
@@ -152,7 +152,7 @@ async def trigger_task(task_name: str, request: Request) -> TaskTriggerResponse:
             run = await db.get(TaskRun, run_id)
             if run:
                 run.status = "failed"
-                run.completed_at = datetime.now(timezone.utc)
+                run.completed_at = datetime.utcnow()
                 run.error_message = str(e)[:500]
                 await db.commit()
 

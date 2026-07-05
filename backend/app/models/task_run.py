@@ -23,11 +23,11 @@ class TaskRun(Base):
         String(20), default="running", nullable=False
     )  # "running", "completed", "failed"
     started_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc), nullable=False
+        default=lambda: datetime.utcnow(), nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(default=None)
     error_message: Mapped[str | None] = mapped_column(String(500), default=None)
     result_summary: Mapped[str | None] = mapped_column(String(500), default=None)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc), nullable=False
+        default=lambda: datetime.utcnow(), nullable=False
     )

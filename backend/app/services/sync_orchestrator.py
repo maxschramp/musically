@@ -69,7 +69,7 @@ class SyncOrchestrator:
         5. Return SyncResult.
         """
         sync_id = uuid.uuid4()
-        started_at = datetime.now(tz=timezone.utc)
+        started_at = datetime.utcnow()
 
         async with self.db_session_factory() as db:
             try:
@@ -78,7 +78,7 @@ class SyncOrchestrator:
                 if lastfm_enabled.lower() != "true":
                     logger.info("LastFM sync skipped: lastfm_enabled is not 'true'.")
                     error_message = "lastfm_enabled is false"
-                    completed_at = datetime.now(tz=timezone.utc)
+                    completed_at = datetime.utcnow()
                     sync_history = SyncHistory(
                         id=sync_id,
                         started_at=started_at,
@@ -112,7 +112,7 @@ class SyncOrchestrator:
                 if not api_key:
                     logger.info("LastFM sync skipped: no API key configured.")
                     error_message = "No LastFM API key configured"
-                    completed_at = datetime.now(tz=timezone.utc)
+                    completed_at = datetime.utcnow()
                     sync_history = SyncHistory(
                         id=sync_id,
                         started_at=started_at,
@@ -143,7 +143,7 @@ class SyncOrchestrator:
                 if not username:
                     logger.info("LastFM sync skipped: no username configured.")
                     error_message = "No LastFM username configured"
-                    completed_at = datetime.now(tz=timezone.utc)
+                    completed_at = datetime.utcnow()
                     sync_history = SyncHistory(
                         id=sync_id,
                         started_at=started_at,
@@ -170,7 +170,7 @@ class SyncOrchestrator:
                     )
 
                 # 4. Determine time range (backfill vs. normal)
-                now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+                now_ts = int(datetime.utcnow().timestamp())
                 from_ts: int | None = None
 
                 # Check if any TrackPlay records exist
@@ -283,7 +283,7 @@ class SyncOrchestrator:
                         logger.exception("Spotify playlist sync failed")
 
                 # 9. Record sync history
-                completed_at = datetime.now(tz=timezone.utc)
+                completed_at = datetime.utcnow()
                 sync_history = SyncHistory(
                     id=sync_id,
                     started_at=started_at,
@@ -325,7 +325,7 @@ class SyncOrchestrator:
 
             except Exception as exc:
                 logger.exception("Sync failed with error: %s", exc)
-                completed_at = datetime.now(tz=timezone.utc)
+                completed_at = datetime.utcnow()
                 error_message = str(exc)
                 try:
                     sync_history = SyncHistory(

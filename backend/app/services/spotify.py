@@ -545,7 +545,7 @@ class SpotifyService:
             if existing:
                 existing.name = name
                 existing.playlist_type = ptype
-                existing.last_synced_at = datetime.now(tz=timezone.utc)
+                existing.last_synced_at = datetime.utcnow()
                 playlist_obj = existing
             else:
                 playlist_obj = Playlist(
@@ -553,7 +553,7 @@ class SpotifyService:
                     name=name,
                     playlist_type=ptype,
                     is_active=True,
-                    last_synced_at=datetime.now(tz=timezone.utc),
+                    last_synced_at=datetime.utcnow(),
                 )
                 db.add(playlist_obj)
 
