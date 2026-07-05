@@ -13,6 +13,7 @@ import {
   Users,
   Settings,
   Timer,
+  ScrollText,
   Database,
   Search,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ const navItems: NavItem[] = [
   { to: '/playlists', label: 'Playlists', icon: <ListMusic className="w-5 h-5" /> },
   { to: '/discover', label: 'Discover', icon: <Search className="w-5 h-5" /> },
   { to: '/tasks', label: 'Tasks', icon: <Timer className="w-5 h-5" /> },
+  { to: '/logs', label: 'Logs', icon: <ScrollText className="w-5 h-5" /> },
   { to: '/database', label: 'Database', icon: <Database className="w-5 h-5" /> },
   { to: '/settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
 ];

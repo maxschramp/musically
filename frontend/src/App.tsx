@@ -14,6 +14,7 @@ import { Artists } from '@/pages/Artists';
 import { Playlists } from '@/pages/Playlists';
 import { Settings } from '@/pages/Settings';
 import { Tasks } from '@/pages/Tasks';
+import { Logs } from '@/pages/Logs';
 import { Database } from '@/pages/Database';
 import { Discover } from '@/pages/Discover';
 
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/playlists" element={<Playlists />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/tasks" element={<Tasks />} />
+        <Route path="/logs" element={<Logs />} />
         <Route path="/database" element={<Database />} />
         <Route path="/discover" element={<Discover />} />
       </Route>
