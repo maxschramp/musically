@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -347,6 +348,34 @@ async def run_download_dispatcher() -> None:
         BATCH_SIZE = 3
 
         async with app.database.async_session_factory() as db:
+            # -------------------------------------------------------------------
+            # Reset albums stuck in 'downloading' for > 30 minutes
+            # -------------------------------------------------------------------
+            stuck_cutoff = datetime.utcnow() - timedelta(minutes=30)
+            stuck_stmt = (
+                select(Album)
+                .where(
+                    Album.status == AlbumStatus.DOWNLOADING,
+                    Album.created_at < stuck_cutoff,
+                )
+                .limit(5)
+            )
+            stuck_result = await db.execute(stuck_stmt)
+            stuck_albums = stuck_result.scalars().all()
+            for album in stuck_albums:
+                album.status = AlbumStatus.QUEUED
+                album.retry_count = 0
+                logger.warning(
+                    "Reset stuck download: %s - %s",
+                    album.artist_name,
+                    album.title,
+                )
+            if stuck_albums:
+                await db.commit()
+
+            # -------------------------------------------------------------------
+            # Pick up queued auto albums for dispatch
+            # -------------------------------------------------------------------
             stmt = (
                 select(Album)
                 .where(

@@ -409,18 +409,20 @@ async def retry_queue_item(
     queue_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> AlbumResponse:
-    """Reset a stalled or failed item for retry.
+    """Reset a stuck or stalled album back to queued for retry.
 
-    Resets retry_count=0, sets next_retry_at=now(), and status=queued.
+    Clears retry_count and next_retry_at so the dispatcher will pick
+    it up on the next cycle.  Works for albums in any non-terminal
+    status (downloading, stalled, queued, etc.).
     """
     result = await db.execute(select(Album).where(Album.id == queue_id))
     album = result.scalar_one_or_none()
     if album is None:
         raise HTTPException(status_code=404, detail=f"Queue item {queue_id} not found")
 
-    album.retry_count = 0
-    album.next_retry_at = datetime.utcnow()
     album.status = AlbumStatus.QUEUED
+    album.retry_count = 0
+    album.next_retry_at = None
     await db.commit()
     await db.refresh(album)
     return _album_to_response(album)
