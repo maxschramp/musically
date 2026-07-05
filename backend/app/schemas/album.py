@@ -48,6 +48,7 @@ class AlbumResponse(BaseModel):
     next_retry_at: datetime | None
     downloaded_at: datetime | None
     created_at: datetime
+    track_count: int = 0
 
 
 # ---------------------------------------------------------------------------

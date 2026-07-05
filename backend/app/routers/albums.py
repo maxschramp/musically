@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 import httpx
 from httpx import ConnectError, TimeoutException, NetworkError
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +40,8 @@ async def list_albums(
     sort: str = Query("created_at", description="Sort field; prefix with - for descending"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=200, description="Items per page"),
+    min_tracks: int | None = Query(None, description="Minimum track count"),
+    max_tracks: int | None = Query(None, description="Maximum track count"),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[AlbumResponse]:
     """List albums in the library.
@@ -80,7 +84,39 @@ async def list_albums(
     result = await db.execute(
         stmt.order_by(sort_column).offset(offset).limit(limit)
     )
-    albums = result.scalars().all()
+    albums = list(result.scalars().all())
+
+    # -------------------------------------------------------------------
+    # Enrich with track counts from filesystem (best-effort)
+    # -------------------------------------------------------------------
+    lib_stmt = select(Setting.value).where(Setting.key == "music_library_directory")
+    lib_result = await db.execute(lib_stmt)
+    lib_path = Path(lib_result.scalar() or "/music/library")
+
+    music_exts = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wma", ".wav", ".aiff", ".alac"}
+
+    for album in albums:
+        track_count = 0
+        for folder in [
+            lib_path / album.artist_name / album.title,
+            lib_path / f"{album.artist_name} - {album.title}",
+        ]:
+            if folder.is_dir():
+                try:
+                    track_count = sum(
+                        1 for f in folder.iterdir()
+                        if f.is_file() and f.suffix.lower() in music_exts
+                    )
+                    break
+                except (PermissionError, OSError):
+                    pass
+        album.track_count = track_count
+
+    # Filter by track count (post-pagination, so totals are approximate)
+    if min_tracks is not None:
+        albums = [a for a in albums if getattr(a, "track_count", 0) >= min_tracks]
+    if max_tracks is not None:
+        albums = [a for a in albums if getattr(a, "track_count", 0) <= max_tracks]
 
     total_pages = max(1, (total + limit - 1) // limit)
 
@@ -600,3 +636,53 @@ async def get_album(
     if album is None:
         raise HTTPException(status_code=404, detail=f"Album {album_id} not found")
     return AlbumResponse.model_validate(album)
+
+
+# ---------------------------------------------------------------------------
+# Bulk delete
+# ---------------------------------------------------------------------------
+
+class BulkDeleteRequest(BaseModel):
+    album_ids: list[uuid.UUID]
+    delete_files: bool = False
+
+
+@router.post("/library/bulk-delete")
+async def bulk_delete_library(
+    body: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete multiple albums from the library.
+
+    Removes DB records and optionally deletes files from disk.
+    """
+    deleted = 0
+    errors: list[str] = []
+
+    for album_id in body.album_ids:
+        album = await db.get(Album, album_id)
+        if album is None:
+            errors.append(f"Album {album_id} not found")
+            continue
+
+        # Optionally delete files
+        if body.delete_files:
+            lib_stmt = select(Setting.value).where(Setting.key == "music_library_directory")
+            lib_result = await db.execute(lib_stmt)
+            lib_path = Path(lib_result.scalar() or "/music/library")
+
+            for folder in [
+                lib_path / album.artist_name / album.title,
+                lib_path / f"{album.artist_name} - {album.title}",
+            ]:
+                if folder.is_dir():
+                    try:
+                        shutil.rmtree(str(folder))
+                    except Exception as e:
+                        errors.append(f"Failed to delete files for {album.title}: {e}")
+
+        await db.delete(album)
+        deleted += 1
+
+    await db.commit()
+    return {"deleted": deleted, "errors": errors}
