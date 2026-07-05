@@ -226,7 +226,7 @@ export function Downloads() {
   } = useApiQuery<PaginatedResponse<Album>>(
     ['queue', 'pipeline', 'queued'],
     '/queue',
-    { status: 'queued', sort: '-created_at', limit: 100 },
+    { status: 'queued', type: 'manual', sort: '-created_at', limit: 100 },
     { refetchInterval: REFETCH_INTERVAL },
   );
 

@@ -119,11 +119,11 @@ export function Swipe() {
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <EmptyState
           icon={<Heart className="w-16 h-16" />}
-          title={allReviewed ? 'All caught up!' : 'No albums to review'}
+          title={allReviewed ? 'All caught up!' : 'No albums pending review'}
           description={
             allReviewed
               ? 'You have reviewed all queued albums. Check back later or add more from the artist pages.'
-              : 'No manually queued albums are waiting for review. Albums will appear here when you manually queue them.'
+              : 'Albums queued by the rule engine or from Spotify playlists will appear here for your approval.'
           }
           actionLabel={allReviewed ? 'View Queue' : undefined}
           onAction={allReviewed ? () => window.location.href = '/queue' : undefined}

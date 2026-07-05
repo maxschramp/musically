@@ -18,30 +18,20 @@ import { PageLoading } from '@/components/shared/LoadingSpinner';
 import { formatDate } from '@/utils/format';
 import type { Album, PaginatedResponse } from '@/types';
 
-type QueueTab = 'all' | 'auto' | 'manual' | 'stalled';
+type QueueTab = 'manual' | 'stalled';
 
 const TABS: { key: QueueTab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'auto', label: 'Auto' },
-  { key: 'manual', label: 'Manual' },
+  { key: 'manual', label: 'Pending' },
   { key: 'stalled', label: 'Stalled' },
 ];
 
 const PAGE_SIZE = 50;
 
 const EMPTY_MESSAGES: Record<QueueTab, { title: string; description: string }> = {
-  all: {
-    title: 'Queue is empty',
-    description:
-      'Albums will appear here when the rule engine finds matches or you manually add them.',
-  },
-  auto: {
-    title: 'No auto-queued albums',
-    description: 'The rule engine will automatically queue albums based on your listening history.',
-  },
   manual: {
-    title: 'No manually queued albums',
-    description: 'Add albums to the queue from the artist or library pages.',
+    title: 'No albums pending review',
+    description:
+      'Albums queued by the rule engine or from Spotify playlists will appear here for your approval. Auto-queued albums are downloaded automatically.',
   },
   stalled: {
     title: 'No stalled items',
@@ -58,7 +48,7 @@ function ReasonTag({ reason }: { reason: string }) {
 }
 
 export function Queue() {
-  const [activeTab, setActiveTab] = useState<QueueTab>('all');
+  const [activeTab, setActiveTab] = useState<QueueTab>('manual');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -68,15 +58,16 @@ export function Queue() {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
-  // Build query params: auto/manual filter by type, stalled filters by status
+  // Build query params: pending filters by type+status, stalled filters by status
   const queryParams = useMemo(() => {
     const params: Record<string, string | number | boolean | undefined> = {
       page,
       limit: PAGE_SIZE,
       sort: '-created_at',
     };
-    if (activeTab === 'auto' || activeTab === 'manual') {
-      params.type = activeTab;
+    if (activeTab === 'manual') {
+      params.type = 'manual';
+      params.status = 'queued';
     } else if (activeTab === 'stalled') {
       params.status = 'stalled';
     }
