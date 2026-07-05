@@ -98,32 +98,30 @@ class RuleEngine:
     ) -> Album | None:
         """Return an existing album (any status) or create a new one queued.
 
-        If an album with status in *queued / downloading / downloaded* already
-        exists, returns None (skip — already handled).
+        If an album with status in *queued / downloading / downloaded / rejected*
+        already exists, returns None (skip — already handled).
         """
-        # Check in-pipeline first
-        existing = await self._album_in_pipeline(artist_name, album_title)
-        if existing is not None:
-            return None
-
-        # Check for any existing record (e.g. stalled, rejected, or just created by aggregator)
+        # Check if album already exists (case-insensitive).
+        # This single query replaces the old two-step check and eliminates
+        # the window where a duplicate INSERT could slip through.
         stmt = select(Album).where(
             func.lower(Album.artist_name) == artist_name.lower(),
             func.lower(Album.title) == album_title.lower(),
         )
-        result = await self.db.execute(stmt)
-        album = result.scalar()
+        row = await self.db.execute(stmt)
+        album = row.scalar()
 
         if album is not None:
-            # Update existing album to queued if it was stalled/rejected/not in pipeline
-            if album.status not in _PIPELINE_STATUSES:
-                album.status = AlbumStatus.QUEUED
-                album.queue_type = queue_type
-                album.reason = reason
-                album.play_count = max(album.play_count or 0, play_count)
-                self.db.add(album)
-                return album
-            return None  # already in pipeline, skip
+            # Already in the pipeline — skip
+            if album.status in _PIPELINE_STATUSES:
+                return None
+            # Exists but not in pipeline (e.g. stalled) — re-queue it
+            album.status = AlbumStatus.QUEUED
+            album.queue_type = queue_type
+            album.reason = reason
+            album.play_count = max(album.play_count or 0, play_count)
+            self.db.add(album)
+            return album
 
         # Create a brand-new Album row
         album = Album(
@@ -372,7 +370,8 @@ class RuleEngine:
 
         Rules are evaluated in order (R1 → R7).  Each rule is independent;
         a failure in one rule does not prevent others from running.
-        One ``commit()`` is issued at the end for all changes.
+        Each rule commits its own changes immediately after success so that
+        a later rule's failure cannot roll back prior rules' work.
         """
         result = RuleResult()
 
@@ -384,6 +383,7 @@ class RuleEngine:
         # --- R1: play count → auto queue ---
         try:
             await self._evaluate_r1(r1_threshold, result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R1 evaluation failed.")
@@ -392,6 +392,7 @@ class RuleEngine:
         # --- R2: seasonal playlist → auto queue ---
         try:
             await self._evaluate_r2(result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R2 evaluation failed.")
@@ -400,6 +401,7 @@ class RuleEngine:
         # --- R3: artist play count → subscribe ---
         try:
             await self._evaluate_r3(r3_threshold, result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R3 evaluation failed.")
@@ -408,6 +410,7 @@ class RuleEngine:
         # --- R4: library size → subscribe ---
         try:
             await self._evaluate_r4(r4_threshold, result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R4 evaluation failed.")
@@ -416,13 +419,15 @@ class RuleEngine:
         # --- R5: new releases (stub) ---
         try:
             await self._evaluate_r5(result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R5 evaluation failed.")
 
-        # --- R6: discover playlists (stub) ---
+        # --- R6: discover playlists ---
         try:
             await self._evaluate_r6(result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R6 evaluation failed.")
@@ -430,12 +435,10 @@ class RuleEngine:
         # --- R7: watch folder (stub) ---
         try:
             await self._evaluate_r7(result)
+            await self.db.commit()
         except Exception:
             await self.db.rollback()
             logger.exception("R7 evaluation failed.")
-
-        # Persist all changes in one commit
-        await self.db.commit()
 
         logger.info(
             "Rule engine complete: auto_queued=%d manual_queued=%d subscribed=%d "
