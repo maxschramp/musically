@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.album import Album, AlbumStatus, QueueType
@@ -101,9 +102,12 @@ class RuleEngine:
         If an album with status in *queued / downloading / downloaded / rejected*
         already exists, returns None (skip — already handled).
         """
+        # Flush any pending inserts from prior iterations so the SELECT
+        # below sees all rows — avoids UniqueViolationError caused by
+        # PostgreSQL collation mismatches on func.lower().
+        await self.db.flush()
+
         # Check if album already exists (case-insensitive).
-        # This single query replaces the old two-step check and eliminates
-        # the window where a duplicate INSERT could slip through.
         stmt = select(Album).where(
             func.lower(Album.artist_name) == artist_name.lower(),
             func.lower(Album.title) == album_title.lower(),
@@ -112,10 +116,22 @@ class RuleEngine:
         album = row.scalar()
 
         if album is not None:
+            logger.debug(
+                "_get_or_create_album: FOUND existing '%s - %s' (status=%s)",
+                artist_name, album_title, album.status.value if album.status else "?",
+            )
             # Already in the pipeline — skip
             if album.status in _PIPELINE_STATUSES:
+                logger.debug(
+                    "_get_or_create_album: SKIP '%s - %s' (already in pipeline: %s)",
+                    artist_name, album_title, album.status.value,
+                )
                 return None
             # Exists but not in pipeline (e.g. stalled) — re-queue it
+            logger.info(
+                "_get_or_create_album: RE-QUEUE '%s - %s' (was %s)",
+                artist_name, album_title, album.status.value,
+            )
             album.status = AlbumStatus.QUEUED
             album.queue_type = queue_type
             album.reason = reason
@@ -124,7 +140,15 @@ class RuleEngine:
             await self.db.flush()
             return album
 
+        logger.debug(
+            "_get_or_create_album: NOT FOUND '%s - %s', will create",
+            artist_name, album_title,
+        )
         # Create a brand-new Album row
+        logger.info(
+            "_get_or_create_album: CREATE '%s - %s'",
+            artist_name, album_title,
+        )
         album = Album(
             title=album_title,
             artist_name=artist_name,
@@ -175,13 +199,24 @@ class RuleEngine:
             if not album_name or not artist_name:
                 continue
 
-            album = await self._get_or_create_album(
-                artist_name=artist_name,
-                album_title=album_name,
-                queue_type=QueueType.MANUAL,
-                reason=f"{play_count} plays",
-                play_count=play_count,
-            )
+            # Use a savepoint so a duplicate on THIS album doesn't
+            # roll back previously-queued albums in the same rule.
+            try:
+                async with self.db.begin_nested():
+                    album = await self._get_or_create_album(
+                        artist_name=artist_name,
+                        album_title=album_name,
+                        queue_type=QueueType.MANUAL,
+                        reason=f"{play_count} plays",
+                        play_count=play_count,
+                    )
+            except IntegrityError:
+                logger.warning(
+                    "R1: Skipping duplicate '%s - %s'",
+                    artist_name, album_name,
+                )
+                continue
+
             if album is not None:
                 result.albums_queued_auto += 1
                 rule_fired = True
@@ -221,12 +256,21 @@ class RuleEngine:
                 if not track.album_name or not track.artist_name:
                     continue
 
-                album = await self._get_or_create_album(
-                    artist_name=track.artist_name,
-                    album_title=track.album_name,
-                    queue_type=QueueType.MANUAL,
-                    reason=f"In {playlist.name}",
-                )
+                try:
+                    async with self.db.begin_nested():
+                        album = await self._get_or_create_album(
+                            artist_name=track.artist_name,
+                            album_title=track.album_name,
+                            queue_type=QueueType.MANUAL,
+                            reason=f"In {playlist.name}",
+                        )
+                except IntegrityError:
+                    logger.warning(
+                        "R2: Skipping duplicate '%s - %s'",
+                        track.artist_name, track.album_name,
+                    )
+                    continue
+
                 if album is not None:
                     result.albums_queued_auto += 1
                     rule_fired = True
@@ -332,12 +376,22 @@ class RuleEngine:
                 if not track.album_name or not track.artist_name:
                     continue
 
-                album = await self._get_or_create_album(
-                    artist_name=track.artist_name,
-                    album_title=track.album_name,
-                    queue_type=QueueType.MANUAL,
-                    reason=f"Discover: {playlist.name}",
-                )
+                try:
+                    async with self.db.begin_nested():
+                        album = await self._get_or_create_album(
+                            artist_name=track.artist_name,
+                            album_title=track.album_name,
+                            queue_type=QueueType.MANUAL,
+                            reason=f"Discover: {playlist.name}",
+                        )
+                except IntegrityError:
+                    logger.warning(
+                        "R6: Skipping duplicate '%s - %s'",
+                        track.artist_name,
+                        track.album_name,
+                    )
+                    continue
+
                 if album is not None:
                     result.albums_queued_manual += 1
                     rule_fired = True
@@ -350,6 +404,11 @@ class RuleEngine:
 
         if rule_fired:
             result.rules_fired.append("R6")
+
+        logger.info(
+            "R6: processed %d playlists, queued %d albums",
+            len(playlists), result.albums_queued_manual,
+        )
 
     # ------------------------------------------------------------------
     # R7: File appears in watch folder → QUEUE (tag+move)  [STUB]
@@ -386,6 +445,7 @@ class RuleEngine:
         try:
             await self._evaluate_r1(r1_threshold, result)
             await self.db.commit()
+            logger.info("R1 committed: %d albums queued", result.albums_queued_auto)
         except Exception:
             await self.db.rollback()
             logger.exception("R1 evaluation failed.")
@@ -395,6 +455,7 @@ class RuleEngine:
         try:
             await self._evaluate_r2(result)
             await self.db.commit()
+            logger.info("R2 committed: %d albums queued", result.albums_queued_auto)
         except Exception:
             await self.db.rollback()
             logger.exception("R2 evaluation failed.")
@@ -430,6 +491,7 @@ class RuleEngine:
         try:
             await self._evaluate_r6(result)
             await self.db.commit()
+            logger.info("R6 committed: %d albums queued", result.albums_queued_manual)
         except Exception:
             await self.db.rollback()
             logger.exception("R6 evaluation failed.")
