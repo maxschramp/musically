@@ -26,6 +26,7 @@ KNOWN_TASKS: dict[str, int] = {
     "artwork_cache": 3,
     "download_dispatcher": 2,
     "cleanup": 360,
+    "library_import": 30,
 }
 
 # Mapping of triggerable task names to scheduler job IDs
@@ -35,6 +36,7 @@ TASK_TO_JOB_ID: dict[str, str] = {
     "artwork_cache": "artwork_cache",
     "mb_enrichment": "mb_enrichment",
     "cleanup": "cleanup",
+    "library_import": "library_import",
 }
 
 

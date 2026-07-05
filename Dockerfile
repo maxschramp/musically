@@ -67,13 +67,18 @@ ENV PYTHONUNBUFFERED=1
 # - ffmpeg: audio processing
 # - libmagic1: file type detection
 # - nginx: reverse proxy + static file serving
-# - supervisor: process manager (nginx + uvicorn)
+# - postgresql: database (self-contained, no external DB needed)
+# - redis-server: message broker for Celery tasks
+# - supervisor: process manager (postgres + redis + nginx + uvicorn)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         beets \
         ffmpeg \
         libmagic1 \
         nginx \
+        openssl \
+        postgresql \
+        redis-server \
         supervisor \
         && rm -rf /var/lib/apt/lists/*
 
@@ -87,8 +92,15 @@ COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
+# Remove default nginx site (conflicts with our config on port 80)
+RUN rm -f /etc/nginx/sites-enabled/default
+
 # Copy supervisord configuration
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Copy entrypoint script (generates self-signed SSL cert for LAN HTTPS)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Copy backend application code
 COPY backend/ /app/
@@ -96,10 +108,15 @@ WORKDIR /app
 
 # Create non-root user and set up directories
 RUN groupadd -r musically && useradd -r -g musically -d /app musically && \
-    mkdir -p /music /downloads /config /var/log/supervisor && \
+    mkdir -p /music /downloads /config /app/data /var/log/supervisor && \
+    mkdir -p /config/postgres /config/redis /run/postgresql && \
+    mkdir -p /config/ssl /etc/nginx/ssl && \
     chown -R musically:musically /app /music /downloads /config /var/log/supervisor && \
     chown -R musically:musically /var/lib/nginx /var/log/nginx && \
     chown -R musically:musically /usr/share/nginx/html && \
+    # PostgreSQL needs its data dir owned by the postgres user (UID/GID match)
+    chown -R postgres:postgres /config/postgres /run/postgresql && \
+    chmod 700 /config/postgres && \
     chmod +x /app/start.sh && \
     # Allow nginx to run as non-root (needs write access to /var/run for pid)
     mkdir -p /var/run/nginx && \
@@ -108,12 +125,12 @@ RUN groupadd -r musically && useradd -r -g musically -d /app musically && \
     mkdir -p /var/run/supervisor && \
     chown -R musically:musically /var/run/supervisor
 
-# Switch to non-root user
-USER musically
-
 # Healthcheck for the API service
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
+
+# Entrypoint: generates self-signed SSL cert for LAN HTTPS on first run
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Default command: supervisord (nginx + uvicorn)
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

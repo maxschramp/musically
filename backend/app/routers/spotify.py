@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -151,11 +151,15 @@ async def test_spotify_connection(
 
 
 @router.get("/spotify/auth/login")
-async def spotify_login(db: AsyncSession = Depends(get_db)) -> dict:
+async def spotify_login(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Generate PKCE challenge and return the Spotify authorization URL.
 
     The user should be redirected to the returned ``auth_url``.  After
     authorizing, Spotify redirects back to ``/api/spotify/auth/callback``.
+
+    The redirect URI is auto-detected from the incoming request's Host header
+    when the configured value is still a localhost default.  This avoids the
+    common "redirect_uri: Not matching configuration" error on LAN setups.
     """
     # Read client_id from settings
     client_id = await _get_setting(db, "spotify_client_id", "")
@@ -165,12 +169,50 @@ async def spotify_login(db: AsyncSession = Depends(get_db)) -> dict:
             detail="Spotify Client ID is not configured. Set it in Settings first.",
         )
 
-    # Build redirect_uri (configurable, defaults to localhost)
+    # Build redirect_uri — auto-detect from request if still on localhost default
     redirect_uri = await _get_setting(
         db,
         "spotify_redirect_uri",
         "http://localhost:8000/api/spotify/auth/callback",
     )
+
+    # If the configured redirect_uri still points to localhost, derive the
+    # correct one from the incoming request.  For non-localhost addresses
+    # we default to https:// since Spotify requires it.
+    if "localhost" in redirect_uri or "127.0.0.1" in redirect_uri:
+        scheme = request.headers.get("X-Forwarded-Proto", request.url.scheme or "http")
+        host = request.headers.get("X-Forwarded-Host", None)
+        if not host:
+            host = request.headers.get("Host", "localhost:8000")
+
+        # Spotify requires HTTPS for non-localhost redirect URIs.
+        # If the request came via HTTP but we're on a LAN server, force HTTPS
+        # and use the HTTPS port (8443 by default) instead of the HTTP port.
+        is_localhost = "localhost" in host or "127.0.0.1" in host
+        if scheme == "http" and not is_localhost:
+            scheme = "https"
+            # Swap HTTP port for HTTPS port if using default mappings
+            if ":808" in host or host.endswith(":80"):
+                host = host.replace(":808", ":8443").replace(":80", ":443")
+
+        redirect_uri = f"{scheme}://{host}/api/spotify/auth/callback"
+
+    # Spotify requires HTTPS for all non-localhost redirect URIs.
+    # If the resolved URI is still HTTP on a LAN/server address, reject early.
+    if redirect_uri.startswith("http://") and "localhost" not in redirect_uri and "127.0.0.1" not in redirect_uri:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Spotify requires HTTPS for redirect URIs on non-localhost addresses. "
+                f"The resolved redirect URI is: {redirect_uri}. "
+                f"To fix this, either: (1) access Musically via HTTPS (https://YOUR_IP:8443) "
+                f"and try again, or (2) manually set spotify_redirect_uri in Settings to an "
+                f"https:// URL that points to this server."
+            ),
+        )
+
+    # Store the resolved redirect_uri so the callback can use the same one
+    await _set_setting(db, "spotify_pkce_redirect_uri", redirect_uri, "api_keys")
 
     # Generate PKCE
     code_verifier, code_challenge = SpotifyService.generate_pkce()

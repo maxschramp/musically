@@ -9,8 +9,8 @@ from pydantic import BaseModel
 
 class TableInfo(BaseModel):
     """Info about a database table."""
-    name: str
-    rows: int
+    table_name: str
+    row_count: int
 
 
 class TablesListResponse(BaseModel):
@@ -23,7 +23,7 @@ class TableDataResponse(BaseModel):
     table_name: str
     columns: list[str]
     rows: list[dict[str, Any]]
-    total_rows: int
+    total: int
     page: int
     limit: int
     total_pages: int

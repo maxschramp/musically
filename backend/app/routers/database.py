@@ -37,7 +37,7 @@ async def list_tables() -> TablesListResponse:
             except Exception:
                 row_count = 0
 
-            tables.append(TableInfo(name=table_name, rows=row_count))
+            tables.append(TableInfo(table_name=table_name, row_count=row_count))
 
     return TablesListResponse(tables=tables)
 
@@ -89,7 +89,7 @@ async def browse_table(
         table_name=table_name,
         columns=columns,
         rows=rows,
-        total_rows=total_rows,
+        total=total_rows,
         page=page,
         limit=limit,
         total_pages=total_pages,

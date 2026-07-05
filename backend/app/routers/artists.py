@@ -68,6 +68,39 @@ async def list_artists(
 
 
 # ---------------------------------------------------------------------------
+# GET /artists/lookup — Find artist by name (for FollowButton initial state)
+# MUST be defined BEFORE /artists/{artist_id} to avoid "lookup" matching as a UUID
+# ---------------------------------------------------------------------------
+@router.get("/artists/lookup")
+async def lookup_artist_get(
+    artist_name: str = Query(..., min_length=1, description="Artist name (case-insensitive)"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Look up an artist by name (case-insensitive) via GET.
+
+    Returns a lightweight response suitable for the FollowButton component:
+      - found: whether the artist exists in the DB
+      - artist_id: the artist's UUID (null if not found)
+      - artist_name: the resolved artist name
+      - subscribed: current subscription status
+    """
+    artist = await _find_artist_by_name(db, artist_name)
+    if artist is None:
+        return {
+            "found": False,
+            "artist_id": None,
+            "artist_name": artist_name.strip(),
+            "subscribed": False,
+        }
+    return {
+        "found": True,
+        "artist_id": str(artist.id),
+        "artist_name": artist.name,
+        "subscribed": artist.subscribed,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /artists/{artist_id} — Single artist
 # ---------------------------------------------------------------------------
 @router.get("/artists/{artist_id}", response_model=ArtistResponse)

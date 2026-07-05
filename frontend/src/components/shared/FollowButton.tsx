@@ -23,7 +23,7 @@ export default function FollowButton({
 }: FollowButtonProps) {
   const queryClient = useQueryClient();
 
-  // Look up the artist to get ID and actual subscription status
+  // Look up the artist to get subscription status
   const { data, isLoading: isLookupLoading } = useApiQuery<ArtistLookupResponse>(
     ['artist-lookup', artistName],
     '/artists/lookup',
@@ -42,12 +42,12 @@ export default function FollowButton({
     },
   );
 
-  const artistId = data?.artist_id;
   const isSubscribed = data?.subscribed ?? initialSubscribed;
 
-  // Subscribe mutation
+  // Subscribe by name (works whether or not artist exists in DB yet)
   const subscribeMutation = useMutation({
-    mutationFn: () => apiClient.post(`/artists/${artistId}/subscribe`),
+    mutationFn: () =>
+      apiClient.post('/artists/subscribe-by-name', { artist_name: artistName }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['artist-lookup', artistName] });
       queryClient.invalidateQueries({ queryKey: ['artists'] });
@@ -55,9 +55,10 @@ export default function FollowButton({
     },
   });
 
-  // Unsubscribe mutation
+  // Unsubscribe by name
   const unsubscribeMutation = useMutation({
-    mutationFn: () => apiClient.post(`/artists/${artistId}/unsubscribe`),
+    mutationFn: () =>
+      apiClient.post('/artists/unsubscribe-by-name', { artist_name: artistName }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['artist-lookup', artistName] });
       queryClient.invalidateQueries({ queryKey: ['artists'] });
@@ -72,7 +73,7 @@ export default function FollowButton({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!artistId || isLoading) return;
+      if (isLoading) return;
 
       if (isSubscribed) {
         unsubscribeMutation.mutate();
@@ -80,13 +81,8 @@ export default function FollowButton({
         subscribeMutation.mutate();
       }
     },
-    [artistId, isSubscribed, isLoading, subscribeMutation, unsubscribeMutation],
+    [isSubscribed, isLoading, subscribeMutation, unsubscribeMutation],
   );
-
-  // Don't render if lookup found no artist (and no initial state)
-  if (data && !data.found && !initialSubscribed) {
-    return null;
-  }
 
   return (
     <button

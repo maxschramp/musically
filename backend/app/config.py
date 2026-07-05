@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./data/musically.db"
+    DATABASE_URL: str = "postgresql+asyncpg://musically:musically@localhost:5432/musically"
 
     # Redis / Celery
     REDIS_URL: str = "redis://localhost:6379/0"

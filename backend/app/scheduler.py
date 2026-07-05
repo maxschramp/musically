@@ -3,12 +3,130 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.database
 from app.config import get_settings
+from app.models.album import Album, AlbumStatus
+from app.models.setting import Setting
 from app.services.sync_orchestrator import SyncOrchestrator
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Shared library import logic (used by both the scheduled job and the API endpoint)
+# ---------------------------------------------------------------------------
+
+MUSIC_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wma", ".wav", ".aiff", ".alac"}
+
+
+async def do_library_import(db: AsyncSession) -> int:
+    """Scan the configured music library directory and create DB records
+    for any album not already tracked.
+
+    Returns the number of newly imported albums.
+    """
+    result = await db.execute(select(Setting.value).where(Setting.key == "music_library_directory"))
+    lib_path_str = result.scalar() or "/music/library"
+    lib_path = Path(lib_path_str)
+
+    if not lib_path.exists():
+        logger.warning("Library import: directory not found: %s", lib_path)
+        return 0
+
+    found: list[dict[str, str]] = []
+    try:
+        for entry in sorted(lib_path.iterdir()):
+            if not entry.is_dir():
+                continue
+            # ArtistName/AlbumName structure
+            for sub in sorted(entry.iterdir()):
+                if sub.is_dir():
+                    try:
+                        has_music = any(
+                            f.is_file() and f.suffix.lower() in MUSIC_EXTENSIONS
+                            for f in sub.iterdir()
+                        )
+                    except (PermissionError, OSError):
+                        has_music = False
+                    if has_music:
+                        found.append({"artist_name": entry.name, "title": sub.name, "path": str(sub)})
+            # ArtistName - AlbumName structure
+            if " - " in entry.name:
+                try:
+                    has_music = any(
+                        f.is_file() and f.suffix.lower() in MUSIC_EXTENSIONS
+                        for f in entry.iterdir()
+                    )
+                except (PermissionError, OSError):
+                    has_music = False
+                if has_music:
+                    parts = entry.name.split(" - ", 1)
+                    found.append({"artist_name": parts[0].strip(), "title": parts[1].strip(), "path": str(entry)})
+    except PermissionError:
+        pass
+
+    # Get existing DB keys
+    db_stmt = select(Album)
+    db_result = await db.execute(db_stmt)
+    db_albums = db_result.scalars().all()
+    db_keys = {(a.artist_name.lower(), a.title.lower()) for a in db_albums}
+
+    imported = 0
+    for fs_album in found:
+        artist_name = fs_album["artist_name"]
+        album_title = fs_album["title"]
+        key = (artist_name.lower(), album_title.lower())
+        if key not in db_keys:
+            existing_stmt = select(Album).where(
+                func.lower(Album.artist_name) == artist_name.lower(),
+                func.lower(Album.title) == album_title.lower(),
+            )
+            existing = (await db.execute(existing_stmt)).scalar()
+            if existing is not None:
+                db_keys.add(key)
+                continue
+
+            album = Album(
+                title=album_title,
+                artist_name=artist_name,
+                status=AlbumStatus.DOWNLOADED,
+                queue_type="watch_folder",
+                reason=f"Imported from library: {fs_album['path']}",
+                play_count=0,
+            )
+            db.add(album)
+            db_keys.add(key)
+            imported += 1
+
+    if imported:
+        await db.commit()
+
+    return imported
+
+
+# ---------------------------------------------------------------------------
+# Scheduled job: periodic library import
+# ---------------------------------------------------------------------------
+
+async def run_library_import_job() -> None:
+    """Scheduled job: scan the library directory and import any new albums.
+
+    Runs on a configurable interval. Only imports albums that are not
+    already tracked in the database. Safe to run frequently — it's
+    idempotent.
+    """
+    try:
+        async with app.database.async_session_factory() as db:
+            imported = await do_library_import(db)
+            if imported:
+                logger.info("Library import: %d new albums imported", imported)
+    except Exception:
+        logger.exception("Library import job failed")
 
 
 async def run_sync_job() -> None:
@@ -209,46 +327,90 @@ async def run_artwork_cache_job() -> None:
 async def run_download_dispatcher() -> None:
     """Pick up auto-queued albums and dispatch them for download.
 
-    Processes 1 album per run to avoid overwhelming Qobuz. The Celery
-    worker handles the actual download (if running); otherwise we call
-    the pipeline directly.
+    Processes up to 3 albums per run.  Tries the Celery worker first
+    (if a worker container is running), otherwise runs the download
+    pipeline directly in-process.
     """
     try:
         from app.models.album import Album, AlbumStatus, QueueType
         from sqlalchemy import select
 
-        async with app.database.async_session_factory() as db:
-            # Find one auto-queued album ready for download
-            stmt = select(Album).where(
-                Album.status == AlbumStatus.QUEUED,
-                Album.queue_type == QueueType.AUTO,
-            ).order_by(Album.created_at.asc()).limit(1)
-            result = await db.execute(stmt)
-            album = result.scalar_one_or_none()
+        # Check whether a Celery worker is actually available
+        celery_available = False
+        try:
+            from app.celery_app import celery_app
+            workers = celery_app.control.ping(timeout=2.0)
+            celery_available = bool(workers)
+        except Exception:
+            celery_available = False
 
-            if album is None:
+        BATCH_SIZE = 3
+
+        async with app.database.async_session_factory() as db:
+            stmt = (
+                select(Album)
+                .where(
+                    Album.status == AlbumStatus.QUEUED,
+                    Album.queue_type == QueueType.AUTO,
+                )
+                .order_by(Album.created_at.asc())
+                .limit(BATCH_SIZE)
+            )
+            result = await db.execute(stmt)
+            albums = result.scalars().all()
+
+            if not albums:
                 return
 
-            # Try Celery first, fall back to direct call
-            try:
-                from app.services.downloader import download_album_task
-                download_album_task.delay(str(album.id))
-                logger.info("Dispatched download for %s - %s (Celery)", album.artist_name, album.title)
-            except Exception:
-                # Celery/Redis not available — run directly
-                logger.info("Celery unavailable, running download directly for %s - %s", album.artist_name, album.title)
+            for album in albums:
+                if celery_available:
+                    try:
+                        from app.services.downloader import download_album_task
+                        download_album_task.delay(str(album.id))
+                        logger.info(
+                            "Dispatched download for %s - %s (Celery)",
+                            album.artist_name,
+                            album.title,
+                        )
+                        continue
+                    except Exception:
+                        logger.warning(
+                            "Celery dispatch failed, falling back to direct for %s - %s",
+                            album.artist_name,
+                            album.title,
+                        )
+
+                # No Celery worker — run the pipeline directly
+                logger.info(
+                    "Running download directly for %s - %s",
+                    album.artist_name,
+                    album.title,
+                )
                 try:
                     from app.services.downloader import _build_pipeline_async
                     pipeline = await _build_pipeline_async()
-                    result = await pipeline.process_album(album.id)
-                    if result.success:
-                        logger.info("Download complete: %s - %s", album.artist_name, album.title)
+                    pipeline_result = await pipeline.process_album(album.id)
+                    if pipeline_result.success:
+                        logger.info(
+                            "Download complete: %s - %s",
+                            album.artist_name,
+                            album.title,
+                        )
                     else:
-                        logger.warning("Download failed: %s - %s: %s", album.artist_name, album.title, result.message)
+                        logger.warning(
+                            "Download failed: %s - %s: %s",
+                            album.artist_name,
+                            album.title,
+                            pipeline_result.message,
+                        )
                     await pipeline.qobuz.close()
                     await pipeline.notifier.close()
                 except Exception as inner:
-                    logger.exception("Direct download failed for %s - %s", album.artist_name, album.title)
+                    logger.exception(
+                        "Direct download failed for %s - %s",
+                        album.artist_name,
+                        album.title,
+                    )
 
     except Exception:
         logger.exception("Download dispatcher failed")

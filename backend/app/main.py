@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.constants import DEFAULT_SETTINGS
 from app.database import Base, async_session_factory, engine
 from app.routers import api_router
-from app.scheduler import run_sync_job, run_mb_enrichment_job, run_artwork_cache_job, run_download_dispatcher, run_cleanup_job
+from app.scheduler import run_sync_job, run_mb_enrichment_job, run_artwork_cache_job, run_download_dispatcher, run_cleanup_job, run_library_import_job
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,12 @@ async def lifespan(app: FastAPI):
         run_cleanup_job,
         IntervalTrigger(hours=6),
         id="cleanup",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_library_import_job,
+        IntervalTrigger(minutes=30),
+        id="library_import",
         replace_existing=True,
     )
     scheduler.start()

@@ -27,6 +27,8 @@ const TASK_NAME_MAP: Record<string, string> = {
   watch_folder: 'Watch Folder',
   artwork_cache: 'Artwork Cache',
   mb_enrichment: 'MusicBrainz Enrichment',
+  library_import: 'Library Import',
+  cleanup: 'Cleanup',
 };
 
 function displayTaskName(taskName: string): string {

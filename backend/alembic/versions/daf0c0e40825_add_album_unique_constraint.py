@@ -34,13 +34,13 @@ def upgrade() -> None:
 
     conn = op.get_bind()
 
+    # Detect dialect for database-specific operations.
+    dialect_name = conn.dialect.name  # "sqlite" or "postgresql"
+
     # ------------------------------------------------------------------
     # Step 1: Find duplicate (artist_name, title) groups and keep the
-    # row with the "best" status.  Works on both SQLite and PostgreSQL.
+    # row with the "best" status.
     # ------------------------------------------------------------------
-
-    # Get all rows from albums so we can deduplicate in Python.
-    # We only need (id, artist_name, title, status).
     rows = conn.execute(
         sa.text("SELECT id, artist_name, title, status FROM albums")
     ).fetchall()
@@ -55,14 +55,11 @@ def upgrade() -> None:
     for entries in groups.values():
         if len(entries) <= 1:
             continue
-        # Sort: best status first (lowest _STATUS_KEEP_ORDER value)
         entries.sort(key=lambda x: _STATUS_KEEP_ORDER.get(x[3].lower(), 5))
-        # Keep the first (best), delete the rest
         for dup in entries[1:]:
             ids_to_delete.append(dup[0])
 
     if ids_to_delete:
-        # Delete in batches to avoid overly large IN clauses
         batch_size = 500
         for i in range(0, len(ids_to_delete), batch_size):
             batch = ids_to_delete[i : i + batch_size]
@@ -70,28 +67,56 @@ def upgrade() -> None:
             conn.execute(sa.text(f"DELETE FROM albums WHERE id IN ({placeholders})"))
 
     # ------------------------------------------------------------------
-    # Step 2: Add the unique constraint (skip if already exists)
+    # Step 2: Add the unique constraint (skip if already exists).
+    # Uses database-appropriate method: direct DDL for PostgreSQL,
+    # batch_alter_table for SQLite.
     # ------------------------------------------------------------------
-    # Check if constraint already exists (e.g., from create_all on SQLite)
+    constraint_name = "uq_album_artist_title"
+
+    # Check if constraint already exists
     constraint_exists = False
-    try:
-        indexes = conn.execute(sa.text("PRAGMA index_list('albums')")).fetchall()
-        index_names = {row[1] for row in indexes}
-        if "uq_album_artist_title" in index_names or any(
-            "uq_album_artist_title" in (name or "") for name in index_names
-        ):
-            constraint_exists = True
-    except Exception:
-        pass
+    if dialect_name == "sqlite":
+        try:
+            indexes = conn.execute(sa.text("PRAGMA index_list('albums')")).fetchall()
+            index_names = {row[1] for row in indexes}
+            if constraint_name in index_names:
+                constraint_exists = True
+        except Exception:
+            pass
+    else:
+        # PostgreSQL / other databases: check information_schema
+        try:
+            result = conn.execute(
+                sa.text(
+                    "SELECT 1 FROM information_schema.table_constraints "
+                    "WHERE constraint_name = :name AND table_name = 'albums'"
+                ),
+                {"name": constraint_name},
+            ).fetchone()
+            if result is not None:
+                constraint_exists = True
+        except Exception:
+            pass
 
     if not constraint_exists:
-        with op.batch_alter_table("albums") as batch_op:
-            batch_op.create_unique_constraint(
-                "uq_album_artist_title", ["artist_name", "title"]
+        if dialect_name == "sqlite":
+            with op.batch_alter_table("albums") as batch_op:
+                batch_op.create_unique_constraint(
+                    constraint_name, ["artist_name", "title"]
+                )
+        else:
+            op.create_unique_constraint(
+                constraint_name, "albums", ["artist_name", "title"]
             )
 
 
 def downgrade() -> None:
     """Remove the unique constraint."""
-    with op.batch_alter_table("albums") as batch_op:
-        batch_op.drop_constraint("uq_album_artist_title", type_="unique")
+    conn = op.get_bind()
+    dialect_name = conn.dialect.name
+
+    if dialect_name == "sqlite":
+        with op.batch_alter_table("albums") as batch_op:
+            batch_op.drop_constraint("uq_album_artist_title", type_="unique")
+    else:
+        op.drop_constraint("uq_album_artist_title", "albums", type_="unique")

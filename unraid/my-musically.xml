@@ -20,12 +20,12 @@
     - Discord notifications when downloads complete
     - Watch folder for automatic tagging of new files
 
-    ⚠ Requires separate PostgreSQL and Redis containers.
-    Install "postgresql16" and "redis" from Community Apps first.
-    Point DATABASE_URL and REDIS_URL below at those containers.
+    🗄️ Uses SQLite by default — no separate database needed.
+    For production with background workers (Celery), set DATABASE_URL
+    and REDIS_URL to point at PostgreSQL and Redis containers.
   </Overview>
   <Category>MediaApp:Music</Category>
-  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <WebUI>http://[IP]:[PORT:808]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/maxschramp/musically/main/unraid/musically.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/maxschramp/musically/main/unraid/musically.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
@@ -33,7 +33,8 @@
   <!-- ================================================================= -->
   <!-- Ports                                                              -->
   <!-- ================================================================= -->
-  <Config Name="Web UI Port" Target="80" Default="8080" Mode="tcp" Description="Port to access the Musically web interface. Container runs nginx on port 80 internally." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Web UI Port" Target="80" Default="808" Mode="tcp" Description="HTTP port to access the Musically web interface. Container runs nginx on port 80 internally." Type="Port" Display="always" Required="true" Mask="false">808</Config>
+  <Config Name="Web UI HTTPS Port" Target="443" Default="8443" Mode="tcp" Description="HTTPS port for Spotify OAuth. Uses a self-signed certificate — accept the browser warning. Spotify requires https:// redirect URIs." Type="Port" Display="always" Required="false" Mask="false">8443</Config>
 
   <!-- ================================================================= -->
   <!-- Paths (Volume Mappings)                                            -->
@@ -45,9 +46,9 @@
   <!-- ================================================================= -->
   <!-- Environment Variables                                              -->
   <!-- ================================================================= -->
-  <Config Name="Database URL" Target="DATABASE_URL" Default="postgresql+asyncpg://musically:musically@POSTGRES_IP:5432/musically" Mode="" Description="PostgreSQL connection string. Replace POSTGRES_IP with your PostgreSQL container name or IP." Type="Variable" Display="always" Required="true" Mask="false">postgresql+asyncpg://musically:musically@POSTGRES_IP:5432/musically</Config>
-  <Config Name="Redis URL" Target="REDIS_URL" Default="redis://REDIS_IP:6379/0" Mode="" Description="Redis connection string. Replace REDIS_IP with your Redis container name or IP." Type="Variable" Display="always" Required="true" Mask="false">redis://REDIS_IP:6379/0</Config>
-  <Config Name="Database Password" Target="DB_PASSWORD" Default="musically" Mode="" Description="PostgreSQL password for the database user." Type="Variable" Display="always" Required="true" Mask="true">musically</Config>
+  <Config Name="Database URL" Target="DATABASE_URL" Default="postgresql+asyncpg://musically:musically@localhost:5432/musically" Mode="" Description="Database connection string. Default uses built-in PostgreSQL. Data persists in /config/postgres." Type="Variable" Display="advanced-hide" Required="false" Mask="false">postgresql+asyncpg://musically:musically@localhost:5432/musically</Config>
+  <Config Name="Redis URL" Target="REDIS_URL" Default="redis://localhost:6379/0" Mode="" Description="Redis connection string. Default uses built-in Redis. Data persists in /config/redis." Type="Variable" Display="advanced-hide" Required="false" Mask="false">redis://localhost:6379/0</Config>
+  <Config Name="Database Password" Target="DB_PASSWORD" Default="" Mode="" Description="PostgreSQL password (only needed if using external PostgreSQL)." Type="Variable" Display="advanced-hide" Required="false" Mask="true"></Config>
   <Config Name="Secret Key" Target="SECRET_KEY" Default="" Mode="" Description="Random secret for encrypting tokens. Generate with: openssl rand -hex 32" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="Qobuz Email" Target="QOBUZ_EMAIL" Default="" Mode="" Description="Your Qobuz account email address (required for downloads)." Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Qobuz Password" Target="QOBUZ_PASSWORD" Default="" Mode="" Description="Your Qobuz account password." Type="Variable" Display="always" Required="false" Mask="true"></Config>

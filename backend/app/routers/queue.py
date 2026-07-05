@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -13,6 +14,60 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.album import Album, AlbumStatus, QueueType
 from app.models.artist import Artist
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Background download helper — used when Celery workers aren't available
+# ---------------------------------------------------------------------------
+
+def _dispatch_download_bg(album_id: uuid.UUID) -> None:
+    """Fire-and-forget: run the download pipeline in the background.
+
+    Creates an asyncio task that runs independently of the HTTP request.
+    Used when no Celery worker is available to process the task queue.
+    """
+    async def _run() -> None:
+        try:
+            from app.services.downloader import _build_pipeline_async
+            pipeline = await _build_pipeline_async()
+            result = await pipeline.process_album(album_id)
+            if result.success:
+                logger.info("Background download complete: %s", album_id)
+            else:
+                logger.warning("Background download failed: %s — %s", album_id, result.message)
+            await pipeline.qobuz.close()
+            await pipeline.notifier.close()
+        except Exception:
+            logger.exception("Background download crashed for %s", album_id)
+
+    asyncio.create_task(_run())
+
+
+def _celery_available() -> bool:
+    """Check whether a Celery worker is online and able to process tasks."""
+    try:
+        from app.celery_app import celery_app
+        workers = celery_app.control.ping(timeout=1.5)
+        return bool(workers)
+    except Exception:
+        return False
+
+
+def _try_dispatch(album_id: uuid.UUID) -> None:
+    """Dispatch a download via Celery if available, otherwise run in background."""
+    if _celery_available():
+        try:
+            from app.services.downloader import download_album_task
+            download_album_task.delay(str(album_id))
+            logger.info("Dispatched download %s via Celery", album_id)
+            return
+        except Exception:
+            logger.warning("Celery dispatch failed for %s, falling back to background", album_id)
+
+    # No Celery worker — run directly in the background
+    _dispatch_download_bg(album_id)
 from app.schemas.album import AlbumBulkCreate, AlbumCreate, AlbumResponse
 from app.schemas.common import PaginatedResponse
 
@@ -265,7 +320,8 @@ async def approve_queue_item(
 ) -> AlbumResponse:
     """Approve a queued album for automatic download.
 
-    Sets queue_type=auto so the download pipeline will pick it up.
+    Sets queue_type=auto and dispatches the download immediately
+    (via Celery worker or in-process background task).
     """
     result = await db.execute(select(Album).where(Album.id == queue_id))
     album = result.scalar_one_or_none()
@@ -281,12 +337,8 @@ async def approve_queue_item(
     await db.commit()
     await db.refresh(album)
 
-    # Dispatch download immediately when user approves
-    try:
-        from app.services.downloader import download_album_task
-        download_album_task.delay(str(queue_id))
-    except Exception:
-        pass  # Celery not available — dispatcher will pick it up
+    # Dispatch download immediately
+    _try_dispatch(queue_id)
 
     return _album_to_response(album)
 
@@ -315,11 +367,7 @@ async def promote_queue_item(
     await db.refresh(album)
 
     # Dispatch immediately
-    try:
-        from app.services.downloader import download_album_task
-        download_album_task.delay(str(queue_id))
-    except Exception:
-        pass  # Celery not available — dispatcher will pick it up
+    _try_dispatch(queue_id)
 
     return _album_to_response(album)
 

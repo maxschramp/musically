@@ -23,6 +23,7 @@ services:
     container_name: musically
     ports:
       - "${APP_PORT:-8080}:80"
+      - "${APP_HTTPS_PORT:-8443}:443"
     environment:
       - DATABASE_URL=postgresql+asyncpg://musically:${DB_PASSWORD}@db:5432/musically
       - REDIS_URL=redis://redis:6379/0

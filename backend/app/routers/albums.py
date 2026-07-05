@@ -242,78 +242,11 @@ async def import_library(
     not already tracked. Prevents the rule engine from re-downloading
     albums you already own.
     """
-    stmt = select(Setting.value).where(Setting.key == "music_library_directory")
-    result = await db.execute(stmt)
-    lib_path_str = result.scalar() or "/music/library"
-    lib_path = Path(lib_path_str)
+    from app.scheduler import do_library_import
 
-    if not lib_path.exists():
-        return {"imported": 0, "message": "Library directory not found"}
-
-    found: list[dict[str, str]] = []
-    music_exts = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wma", ".wav", ".aiff", ".alac"}
-
-    try:
-        for entry in sorted(lib_path.iterdir()):
-            if not entry.is_dir():
-                continue
-            for sub in sorted(entry.iterdir()):
-                if sub.is_dir():
-                    try:
-                        has_music = any(f.is_file() and f.suffix.lower() in music_exts for f in sub.iterdir())
-                    except (PermissionError, OSError):
-                        has_music = False
-                    if has_music:
-                        found.append({"artist_name": entry.name, "title": sub.name, "path": str(sub)})
-            if " - " in entry.name:
-                try:
-                    has_music = any(f.is_file() and f.suffix.lower() in music_exts for f in entry.iterdir())
-                except (PermissionError, OSError):
-                    has_music = False
-                if has_music:
-                    parts = entry.name.split(" - ", 1)
-                    found.append({"artist_name": parts[0].strip(), "title": parts[1].strip(), "path": str(entry)})
-    except PermissionError:
-        pass
-
-    # Get existing DB keys
-    db_stmt = select(Album)
-    db_result = await db.execute(db_stmt)
-    db_albums = db_result.scalars().all()
-    db_keys = {(a.artist_name.lower(), a.title.lower()) for a in db_albums}
-
-    imported = 0
-    for fs_album in found:
-        artist_name = fs_album["artist_name"]
-        album_title = fs_album["title"]
-        key = (artist_name.lower(), album_title.lower())
-        if key not in db_keys:
-            # Case-insensitive duplicate check via SQL (handles DB entries not in local set)
-            existing_stmt = select(Album).where(
-                func.lower(Album.artist_name) == artist_name.lower(),
-                func.lower(Album.title) == album_title.lower(),
-            )
-            existing = (await db.execute(existing_stmt)).scalar()
-            if existing is not None:
-                db_keys.add(key)  # Track as known for subsequent iterations
-                continue
-
-            album = Album(
-                title=album_title,
-                artist_name=artist_name,
-                status=AlbumStatus.DOWNLOADED,
-                queue_type="watch_folder",
-                reason=f"Imported from library: {fs_album['path']}",
-                play_count=0,
-            )
-            db.add(album)
-            db_keys.add(key)
-            imported += 1
-
+    imported = await do_library_import(db)
     if imported:
-        await db.commit()
         print(f"Imported {imported} albums into DB")
-
     return {"imported": imported, "message": f"Imported {imported} albums"}
 
 
