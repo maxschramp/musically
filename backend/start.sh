@@ -62,16 +62,15 @@ echo "Database ready."
 echo ""
 
 # ---------------------------------------------------------------------------
-# 5. Run Alembic migrations as musically user
+# 5. Run Alembic migrations
 # ---------------------------------------------------------------------------
 echo "Running database migrations..."
-cd /app
-HOME=/app su -m musically -c "cd /app && alembic upgrade head"
+cd /app && alembic upgrade head
 echo "Migrations complete."
 echo ""
 
 # ---------------------------------------------------------------------------
-# 6. Start FastAPI as musically user
+# 6. Start FastAPI (runs as root)
 # ---------------------------------------------------------------------------
 echo "Starting FastAPI server..."
-exec env HOME=/app su -m musically -c "cd /app && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+cd /app && exec uvicorn app.main:app --host 0.0.0.0 --port 8000

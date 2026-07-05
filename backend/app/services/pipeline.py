@@ -121,7 +121,7 @@ class DownloadPipeline:
         intervals = self._get_retry_intervals()
         idx = min(retry_count, len(intervals) - 1)
         hours = intervals[idx]
-        return datetime.now(timezone.utc) + timedelta(hours=hours)
+        return _utcnow() + timedelta(hours=hours)
 
     # ------------------------------------------------------------------
     # Core pipeline
@@ -554,7 +554,7 @@ class DownloadPipeline:
 
         Returns the number of albums queued for retry.
         """
-        now = datetime.now(timezone.utc)
+        now = _utcnow()
         count = 0
 
         async with self.db_session_factory() as db:

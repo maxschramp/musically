@@ -1,6 +1,4 @@
 import logging
-import os
-from logging.handlers import RotatingFileHandler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,21 +26,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup: create tables if SQLite, start scheduler, start watch folder.
     Shutdown: stop watch folder, dispose engine, shutdown scheduler."""
-    # Ensure log directory exists and attach rotating file handler for API logs
-    os.makedirs("/var/log/supervisor", exist_ok=True)
-    fh = RotatingFileHandler(
-        "/var/log/supervisor/api.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=3,
-    )
-    fh.setFormatter(
-        logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
-    logging.getLogger().addHandler(fh)
-
     settings = get_settings()
     if "sqlite" in settings.DATABASE_URL:
         async with engine.begin() as conn:
