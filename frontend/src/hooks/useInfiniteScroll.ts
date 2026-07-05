@@ -73,7 +73,7 @@ export function useInfiniteScroll<T>(
   // Intersection Observer for scroll detection
   useEffect(() => {
     const loader = loaderRef.current;
-    if (!loader) return;
+    if (!loader || !hasMore) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -90,7 +90,7 @@ export function useInfiniteScroll<T>(
 
     observer.observe(loader);
     return () => observer.disconnect();
-  }, [threshold]);
+  }, [hasMore, isLoading, threshold]);
 
   const reset = useCallback(() => {
     setPage(1);
