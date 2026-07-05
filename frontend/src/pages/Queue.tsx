@@ -5,7 +5,7 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, X, RotateCw, ChevronLeft, ChevronRight, ListMusic } from 'lucide-react';
+import { Check, X, RotateCw, ChevronLeft, ChevronRight, ListMusic, Trash2 } from 'lucide-react';
 import { apiClient } from '@/api/client';
 import { useApiQuery } from '@/hooks/useApi';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -129,6 +129,14 @@ export function Queue() {
     },
   });
 
+  const clearStalledMutation = useMutation({
+    mutationFn: () => apiClient.post('/queue/clear-stalled'),
+    onSuccess: () => {
+      setPage(1);
+      invalidateQueue();
+    },
+  });
+
   // ---- Handlers ----
 
   const handleTabChange = useCallback((tab: QueueTab) => {
@@ -181,7 +189,24 @@ export function Queue() {
 
   return (
     <div className="space-y-6">
-      <TabBar activeTab={activeTab} onTabChange={handleTabChange} />
+      <div className="flex items-center justify-between">
+        <TabBar activeTab={activeTab} onTabChange={handleTabChange} />
+        {activeTab === 'stalled' && items.length > 0 && (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              if (window.confirm(`Delete all ${items.length} stalled album(s)? This cannot be undone.`)) {
+                clearStalledMutation.mutate();
+              }
+            }}
+            loading={clearStalledMutation.isPending}
+            leftIcon={<Trash2 className="w-4 h-4" />}
+          >
+            Clear Stalled
+          </Button>
+        )}
+      </div>
 
       {/* Bulk Action Bar */}
       {selected.size > 0 && (

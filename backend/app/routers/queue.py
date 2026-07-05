@@ -509,3 +509,20 @@ async def bulk_reject(
     await db.commit()
 
     return {"status": "ok", "rejected": rejected, "errors": errors, "total": len(ids_raw)}
+
+
+# ---------------------------------------------------------------------------
+# POST /queue/clear-stalled
+# ---------------------------------------------------------------------------
+@router.post("/queue/clear-stalled")
+async def clear_stalled(db: AsyncSession = Depends(get_db)) -> dict:
+    """Delete all stalled albums from the queue."""
+    result = await db.execute(
+        select(Album).where(Album.status == AlbumStatus.STALLED)
+    )
+    stalled = result.scalars().all()
+    count = len(stalled)
+    for album in stalled:
+        await db.delete(album)
+    await db.commit()
+    return {"cleared": count, "message": f"Cleared {count} stalled album(s)"}

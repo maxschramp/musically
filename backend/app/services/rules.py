@@ -121,6 +121,7 @@ class RuleEngine:
             album.reason = reason
             album.play_count = max(album.play_count or 0, play_count)
             self.db.add(album)
+            await self.db.flush()
             return album
 
         # Create a brand-new Album row
@@ -133,6 +134,7 @@ class RuleEngine:
             play_count=play_count,
         )
         self.db.add(album)
+        await self.db.flush()
         return album
 
     # ------------------------------------------------------------------
