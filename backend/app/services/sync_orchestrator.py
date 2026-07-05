@@ -217,6 +217,13 @@ class SyncOrchestrator:
                     await lastfm.close()
 
                 # 7. Run rule engine
+                # Ensure clean transaction before rule engine (aggregation may have
+                # left the session in an aborted state if a DB error occurred).
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+
                 rule_engine = RuleEngine(db)
                 try:
                     rule_result = await rule_engine.evaluate()

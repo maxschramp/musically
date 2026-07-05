@@ -385,6 +385,7 @@ class RuleEngine:
         try:
             await self._evaluate_r1(r1_threshold, result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R1 evaluation failed.")
             result.errors.append("R1: evaluation error — see logs.")
 
@@ -392,6 +393,7 @@ class RuleEngine:
         try:
             await self._evaluate_r2(result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R2 evaluation failed.")
             result.errors.append("R2: evaluation error — see logs.")
 
@@ -399,6 +401,7 @@ class RuleEngine:
         try:
             await self._evaluate_r3(r3_threshold, result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R3 evaluation failed.")
             result.errors.append("R3: evaluation error — see logs.")
 
@@ -406,6 +409,7 @@ class RuleEngine:
         try:
             await self._evaluate_r4(r4_threshold, result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R4 evaluation failed.")
             result.errors.append("R4: evaluation error — see logs.")
 
@@ -413,18 +417,21 @@ class RuleEngine:
         try:
             await self._evaluate_r5(result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R5 evaluation failed.")
 
         # --- R6: discover playlists (stub) ---
         try:
             await self._evaluate_r6(result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R6 evaluation failed.")
 
         # --- R7: watch folder (stub) ---
         try:
             await self._evaluate_r7(result)
         except Exception:
+            await self.db.rollback()
             logger.exception("R7 evaluation failed.")
 
         # Persist all changes in one commit
