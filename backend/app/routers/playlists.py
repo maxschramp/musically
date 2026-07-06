@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,8 @@ from app.database import get_db
 from app.models.playlist import Playlist
 from app.schemas.common import PaginatedResponse
 from app.schemas.playlist import PlaylistResponse, PlaylistUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -86,9 +89,97 @@ async def update_playlist(
 # POST /playlists/refresh — Trigger Spotify refresh
 # ---------------------------------------------------------------------------
 @router.post("/playlists/refresh")
-async def refresh_playlists() -> dict:
-    """Trigger a refresh of all playlists from Spotify.
+async def refresh_playlists(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Fetch fresh playlists from Spotify, re-classify, and upsert tracks.
 
-    Spotify integration is pending (Phase 6). This endpoint is a stub.
+    Requires Spotify to be configured with a valid refresh token
+    (OAuth PKCE flow completed via Settings → Connect Spotify).
     """
-    return {"status": "ok", "message": "Playlist refresh triggered (Spotify integration pending)"}
+    from app.models.setting import Setting
+    from app.services.spotify import (
+        SpotifyService,
+        SpotifySyncResult,
+        _decrypt_token,
+    )
+
+    # 1. Read Spotify credentials from settings
+    stmt = select(Setting).where(Setting.key.in_([
+        "spotify_client_id", "spotify_client_secret",
+        "spotify_redirect_uri", "spotify_refresh_token",
+        "spotify_access_token_encrypted", "spotify_token_expiry",
+    ]))
+    rows = await db.execute(stmt)
+    settings_map: dict[str, str] = {s.key: s.value for s in rows.scalars().all()}
+
+    client_id = settings_map.get("spotify_client_id", "")
+    client_secret = settings_map.get("spotify_client_secret", "")
+    redirect_uri = settings_map.get(
+        "spotify_redirect_uri",
+        "http://localhost:8000/api/spotify/auth/callback",
+    )
+
+    if not client_id or not client_secret:
+        raise HTTPException(
+            status_code=400,
+            detail="Spotify Client ID and Secret must be configured in Settings.",
+        )
+
+    encrypted_refresh = settings_map.get("spotify_refresh_token", "")
+    if not _decrypt_token(encrypted_refresh):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Not connected to Spotify. Go to Settings → Spotify "
+                "and click 'Connect Spotify' to authorize."
+            ),
+        )
+
+    # 2. Build Spotify service and pre-load existing tokens
+    spotify = SpotifyService(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+    )
+
+    encrypted_access = settings_map.get("spotify_access_token_encrypted", "")
+    if encrypted_access:
+        spotify._access_token = _decrypt_token(encrypted_access)
+
+    expiry_str = settings_map.get("spotify_token_expiry", "")
+    if expiry_str:
+        from datetime import datetime as dt
+        try:
+            spotify._token_expiry = dt.fromisoformat(expiry_str)
+        except ValueError:
+            pass
+
+    # 3. Run sync
+    try:
+        result: SpotifySyncResult = await spotify.sync_playlists(db)
+        logger.info(
+            "Manual playlist refresh: %d playlists, %d tracks, "
+            "seasonal=%d discover=%d other=%d",
+            result.playlists_synced,
+            result.tracks_added,
+            result.seasonal,
+            result.discover,
+            result.other,
+        )
+        return {
+            "status": "ok",
+            "playlists_synced": result.playlists_synced,
+            "tracks_added": result.tracks_added,
+            "seasonal": result.seasonal,
+            "discover": result.discover,
+            "other": result.other,
+        }
+    except Exception as exc:
+        logger.exception("Manual playlist refresh failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Spotify sync failed: {exc}",
+        ) from exc
+    finally:
+        await spotify.close()
