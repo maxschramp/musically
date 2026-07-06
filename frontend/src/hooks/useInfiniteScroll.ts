@@ -46,6 +46,11 @@ export function useInfiniteScroll<T>(
   useEffect(() => {
     if (!data) return;
 
+    // Guard against stale data: if a filter/search reset happened while
+    // this query was in-flight, the data.page won't match our current
+    // page state.  Discard stale responses.
+    if (data.page !== page) return;
+
     if (page === 1) {
       // New search/filter: replace items entirely
       setItems(data.items);
