@@ -1,0 +1,97 @@
+/* musically — Buttons
+   Requires tokens.css to be loaded first. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-body);
+  line-height: 1;
+  padding: 14px 28px;
+  border-radius: var(--radius-pill);
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  text-decoration: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--color-purple);
+  outline-offset: 2px;
+}
+
+/* Primary — coral fill, use for the main call to action ("Play", "Follow") */
+.btn-primary {
+  background: var(--color-coral);
+  color: var(--color-white);
+}
+.btn-primary:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Secondary / Content — dark green fill, use for secondary actions on light surfaces */
+.btn-secondary {
+  background: var(--color-dark-green);
+  color: var(--color-white);
+}
+.btn-secondary:hover {
+  background: var(--color-sage-green);
+}
+
+/* Outline — for tertiary actions or on dark surfaces */
+.btn-outline {
+  background: transparent;
+  color: var(--color-dark-green);
+  border: 2px solid var(--color-dark-green);
+  padding: 12px 26px;
+}
+.btn-outline:hover {
+  background: var(--color-dark-green);
+  color: var(--color-white);
+}
+
+/* Accent — purple, use sparingly for playlist/collection actions */
+.btn-accent {
+  background: var(--color-purple);
+  color: var(--color-white);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Icon-only circular buttons (transport controls, avatars) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn:focus-visible { outline: 3px solid var(--color-purple); outline-offset: 2px; }
+
+.icon-btn-dark    { background: var(--color-dark-green); color: var(--color-white); }
+.icon-btn-sage    { background: var(--color-sage-green); color: var(--color-white); }
+.icon-btn-coral   { background: var(--color-coral); color: var(--color-white); }
+.icon-btn-purple  { background: var(--color-purple); color: var(--color-white); }
+.icon-btn-grey    { background: var(--color-light-grey); color: var(--color-white); }
+.icon-btn-ghost   { background: transparent; color: var(--color-text-muted); }
+.icon-btn-ghost:hover { background: rgba(0,0,0,0.05); }
+
+.icon-btn.size-sm { width: 36px; height: 36px; }
+.icon-btn.size-lg { width: 64px; height: 64px; }

@@ -3,7 +3,8 @@
 // Stats cards with API data + recent activity placeholder
 // ============================================
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart3, Disc3, Download, Clock, Users, Music } from 'lucide-react';
 import { Card } from '@/components/shared/Card';
 import { useApiQuery } from '@/hooks/useApi';
@@ -92,6 +93,7 @@ function statusBadgeColor(status: string): string {
 // ============================================
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const {
     data: stats,
     isLoading,
@@ -106,6 +108,17 @@ export function Dashboard() {
     ['queue', 'recent'],
     '/queue',
     { sort: '-created_at', limit: 10 },
+  );
+
+  // Recently downloaded albums
+  const {
+    data: recentData,
+    isLoading: recentLoading,
+    isError: recentError,
+  } = useApiQuery<PaginatedResponse<Album>>(
+    ['albums', 'recent-downloads'],
+    '/albums',
+    { sort: '-downloaded_at', limit: 6 },
   );
 
   const queueItems = queueData?.items ?? [];
@@ -145,7 +158,7 @@ export function Dashboard() {
     {
       icon: <Music className="w-5 h-5 text-white" />,
       label: 'Track Plays',
-      value: fmt(stats?.total_track_plays),
+      value: fmt(stats?.total_tracks),
       color: 'bg-action-blue',
     },
     {
@@ -275,6 +288,92 @@ export function Dashboard() {
           </div>
         )}
       </Card>
+
+      {/* Recently Downloaded Section */}
+      <Card padding="lg">
+        <h3 className="font-display text-lg text-ink tracking-tight mb-4">
+          Recently Downloaded
+        </h3>
+
+        {recentLoading && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="animate-pulse">
+                <div className="aspect-square rounded-sm bg-hairline mb-2" />
+                <div className="h-3 bg-hairline rounded w-3/4 mb-1" />
+                <div className="h-3 bg-hairline rounded w-1/2" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {recentError && !recentLoading && (
+          <p className="text-sm text-coral">Failed to load recent downloads.</p>
+        )}
+
+        {!recentLoading && !recentError && (recentData?.items ?? []).length === 0 && (
+          <div className="flex flex-col items-center py-8 text-center">
+            <Download className="w-10 h-10 text-hairline mb-3" />
+            <p className="text-sm text-body-muted">
+              No downloads yet. Approved albums will appear here after downloading.
+            </p>
+          </div>
+        )}
+
+        {!recentLoading && !recentError && (recentData?.items ?? []).length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {(recentData?.items ?? []).map((album) => (
+              <RecentAlbumCard
+                key={album.id}
+                album={album}
+                onClick={() => navigate(`/library/${album.id}`)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* View all link */}
+        {(recentData?.items ?? []).length > 0 && (
+          <div className="mt-4 pt-3 border-t border-card-border">
+            <a href="/library" className="text-xs text-action-blue hover:underline">
+              View all {recentData?.total ?? 0} albums in Library →
+            </a>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+// ============================================
+// Recent Album Card (compact, for dashboard)
+// ============================================
+
+function RecentAlbumCard({ album, onClick }: { album: Album; onClick: () => void }) {
+  const [imgError, setImgError] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-blue rounded-sm"
+    >
+      <div className="aspect-square rounded-sm bg-soft-stone flex items-center justify-center mb-2 overflow-hidden">
+        <img
+          src={`/api/albums/${album.id}/artwork`}
+          alt={`${album.artist_name} - ${album.title}`}
+          className="w-full h-full object-cover rounded-sm group-hover:scale-105 transition-transform duration-300"
+          onError={() => setImgError(true)}
+          loading="lazy"
+        />
+        {imgError && <Disc3 className="w-8 h-8 text-muted" />}
+      </div>
+      <p className="text-xs font-medium text-ink truncate group-hover:text-brand-coral transition-colors">
+        {album.title}
+      </p>
+      <p className="text-[11px] text-muted truncate">
+        {album.artist_name}
+      </p>
+    </button>
   );
 }

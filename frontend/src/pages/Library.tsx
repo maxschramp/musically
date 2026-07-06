@@ -4,6 +4,7 @@
 // ============================================
 
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Disc3,
   Search,
@@ -13,6 +14,10 @@ import {
   Trash2,
   CheckSquare,
   Square,
+  LayoutGrid,
+  List,
+  ArrowUpDown,
+  AlertCircle,
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/shared/Card';
@@ -90,9 +95,22 @@ function AlbumCard({ album, index: _index, onClick, selectMode = false, isSelect
       <p className="text-xs text-muted truncate mt-0.5" title={album.artist_name}>
         {album.artist_name}
       </p>
-      {album.track_count > 0 && (
-        <p className="text-xs text-muted mt-0.5">{album.track_count} track{album.track_count !== 1 ? 's' : ''}</p>
-      )}
+      <div className="flex items-center justify-between gap-1 mt-0.5">
+        <span className="text-xs text-muted">
+          {album.track_count > 0 ? `${album.track_count} track${album.track_count !== 1 ? 's' : ''}` : ''}
+        </span>
+        {/* Missing tracks indicator — always clickable to open detail for MB comparison */}
+        <span
+          className="text-amber-500 hover:text-amber-600 cursor-pointer shrink-0"
+          title="Check MusicBrainz for missing tracks"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+        >
+          <AlertCircle className="w-3.5 h-3.5" />
+        </span>
+      </div>
       {album.downloaded_at && (
         <p className="text-xs text-body-muted mt-0.5">
           {formatDate(album.downloaded_at)}
@@ -186,6 +204,7 @@ function formatMs(ms: number): string {
 // ============================================
 
 export function Library() {
+  const navigate = useNavigate();
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
@@ -195,6 +214,43 @@ export function Library() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  // --- Sorting ---
+  const [sortBy, setSortBy] = useState<string>('-created_at');
+
+  // --- View toggle (Grid / Table), persisted in localStorage ---
+  const [view, setView] = useState<'grid' | 'table'>(() => {
+    try {
+      const stored = localStorage.getItem('musically-library-view');
+      if (stored === 'grid' || stored === 'table') return stored;
+    } catch {
+      // localStorage unavailable
+    }
+    return 'grid';
+  });
+
+  const setViewPersisted = (v: 'grid' | 'table') => {
+    setView(v);
+    try {
+      localStorage.setItem('musically-library-view', v);
+    } catch {
+      // localStorage unavailable
+    }
+  };
+
+  // Sort options list
+  const sortOptions = [
+    { label: 'Date Added (newest)', value: '-created_at' },
+    { label: 'Date Added (oldest)', value: 'created_at' },
+    { label: 'Alphabetical (A–Z)', value: 'title' },
+    { label: 'Alphabetical (Z–A)', value: '-title' },
+    { label: 'Artist (A–Z)', value: 'artist_name' },
+    { label: 'Artist (Z–A)', value: '-artist_name' },
+    { label: 'Release Date (newest)', value: '-release_date' },
+    { label: 'Release Date (oldest)', value: 'release_date' },
+    { label: 'Track Count (most)', value: '-track_count' },
+    { label: 'Track Count (least)', value: 'track_count' },
+  ];
 
   const trackFilterParams = useMemo(() => {
     switch (trackFilter) {
@@ -207,8 +263,9 @@ export function Library() {
 
   const queryParams = useMemo(() => ({
     search: debouncedSearch || undefined,
+    sort: sortBy,
     ...trackFilterParams,
-  }), [debouncedSearch, trackFilterParams]);
+  }), [debouncedSearch, sortBy, trackFilterParams]);
 
   const {
     items: albums,
@@ -222,7 +279,7 @@ export function Library() {
     reset,
     total,
   } = useInfiniteScroll<Album>(
-    ['albums', debouncedSearch, trackFilter],
+    ['albums', debouncedSearch, trackFilter, sortBy],
     '/albums',
     queryParams,
   );
@@ -235,10 +292,10 @@ export function Library() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Reset infinite scroll when search or filter changes
+  // Reset infinite scroll when search, filter, or sort changes
   useEffect(() => {
     reset();
-  }, [debouncedSearch, trackFilter, reset]);
+  }, [debouncedSearch, trackFilter, sortBy, reset]);
 
   // --- Detail Queries (enabled only when an album is selected) ---
   const queryClient = useQueryClient();
@@ -343,6 +400,56 @@ export function Library() {
         ))}
       </div>
 
+      {/* Sort Dropdown + View Toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Sort */}
+        <div className="relative">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="appearance-none pl-3 pr-9 py-1.5 rounded-pill text-xs font-medium bg-soft-stone text-ink border-0 cursor-pointer hover:bg-hairline transition-colors focus:outline-none focus:ring-2 focus:ring-focus-blue"
+            aria-label="Sort albums"
+          >
+            {sortOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <ArrowUpDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted pointer-events-none" />
+        </div>
+
+        {/* View Toggle */}
+        <div className="flex items-center rounded-pill bg-soft-stone p-0.5">
+          <button
+            type="button"
+            onClick={() => setViewPersisted('grid')}
+            className={`px-3 py-1.5 rounded-pill text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+              view === 'grid'
+                ? 'bg-ink text-white'
+                : 'text-muted hover:text-ink'
+            }`}
+            aria-label="Grid view"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Grid</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewPersisted('table')}
+            className={`px-3 py-1.5 rounded-pill text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+              view === 'table'
+                ? 'bg-ink text-white'
+                : 'text-muted hover:text-ink'
+            }`}
+            aria-label="Table view"
+          >
+            <List className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Table</span>
+          </button>
+        </div>
+      </div>
+
       {/* Header with Select Toggle */}
       {!isLoading && !isError && albums.length > 0 && (
         <div className="flex items-center justify-between">
@@ -412,32 +519,56 @@ export function Library() {
         </Card>
       )}
 
-      {/* Album Grid */}
+      {/* Grid / Table View */}
       {!isLoading && !isError && albums.length > 0 && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {albums.map((album, i) => (
-              <AlbumCard
-                key={album.id}
-                album={album}
-                index={i}
-                onClick={() => setSelectedAlbum(album)}
-                selectMode={selectMode}
-                isSelected={selectedIds.has(album.id)}
-                onToggleSelect={(id) => {
-                  setSelectedIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) {
-                      next.delete(id);
-                    } else {
-                      next.add(id);
-                    }
-                    return next;
-                  });
-                }}
-              />
-            ))}
-          </div>
+          {/* ========== Grid View ========== */}
+          {view === 'grid' && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {albums.map((album, i) => (
+                <AlbumCard
+                  key={album.id}
+                  album={album}
+                  index={i}
+                  onClick={() => navigate(`/library/${album.id}`)}
+                  selectMode={selectMode}
+                  isSelected={selectedIds.has(album.id)}
+                  onToggleSelect={(id) => {
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) {
+                        next.delete(id);
+                      } else {
+                        next.add(id);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* ========== Table View ========== */}
+          {view === 'table' && (
+            <LibraryTable
+              albums={albums}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={(id) => {
+                setSelectedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(id)) {
+                    next.delete(id);
+                  } else {
+                    next.add(id);
+                  }
+                  return next;
+                });
+              }}
+              onAlbumClick={(album) => navigate(`/library/${album.id}`)}
+            />
+          )}
 
           {/* Skeleton placeholders while loading the next page */}
           {isLoadingMore && <SkeletonAlbumGrid count={10} />}
@@ -674,5 +805,169 @@ export function Library() {
         )}
       </Modal>
     </div>
+  );
+}
+
+// ============================================
+// Library Table Component
+// Cohere research-table style: white card, thin rules, hover states
+// ============================================
+
+
+interface LibraryTableProps {
+  albums: Album[];
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onAlbumClick: (album: Album) => void;
+}
+
+function LibraryTable({
+  albums,
+  selectMode,
+  selectedIds,
+  onToggleSelect,
+  onAlbumClick,
+}: LibraryTableProps) {
+  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
+
+  const handleImgError = (id: string) => {
+    setImgErrors((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Card padding="none">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-card-border text-left text-xs text-muted uppercase tracking-wider">
+              {selectMode && <th className="w-10 py-2.5 pl-4 font-medium"> </th>}
+              <th className="w-12 py-2.5 pl-4 font-medium"></th>
+              <th className="py-2.5 font-medium">Album</th>
+              <th className="py-2.5 font-medium hidden sm:table-cell">Tracks</th>
+              <th className="py-2.5 font-medium hidden md:table-cell">Format</th>
+              <th className="py-2.5 font-medium hidden lg:table-cell">Size</th>
+              <th className="py-2.5 font-medium hidden lg:table-cell">Downloaded</th>
+              <th className="py-2.5 pr-4 font-medium text-right"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-card-border">
+            {albums.map((album) => {
+              const imgFailed = imgErrors.has(album.id);
+              return (
+                <tr
+                  key={album.id}
+                  className="hover:bg-soft-stone/30 transition-colors cursor-pointer"
+                  onClick={() => {
+                    if (selectMode) {
+                      onToggleSelect(album.id);
+                    } else {
+                      onAlbumClick(album);
+                    }
+                  }}
+                >
+                  {/* Select checkbox */}
+                  {selectMode && (
+                    <td className="py-2.5 pl-4" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => onToggleSelect(album.id)}
+                        className="cursor-pointer"
+                        aria-label={selectedIds.has(album.id) ? 'Deselect' : 'Select'}
+                      >
+                        {selectedIds.has(album.id) ? (
+                          <CheckSquare className="w-4 h-4 text-coral" />
+                        ) : (
+                          <Square className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                    </td>
+                  )}
+
+                  {/* Artwork thumbnail */}
+                  <td className="py-2.5 pl-4">
+                    <div className="w-10 h-10 rounded-sm bg-soft-stone overflow-hidden shrink-0 flex items-center justify-center">
+                      {imgFailed ? (
+                        <Disc3 className="w-5 h-5 text-muted" />
+                      ) : (
+                        <img
+                          src={`/api/albums/${album.id}/artwork`}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          onError={() => handleImgError(album.id)}
+                        />
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Artist — Album title */}
+                  <td className="py-2.5 min-w-0">
+                    <div className="truncate">
+                      <span className="text-ink font-medium truncate" title={album.title}>
+                        {truncate(album.title, 50)}
+                      </span>
+                      <span className="text-muted block sm:hidden text-xs">
+                        {truncate(album.artist_name, 30)}
+                      </span>
+                      <span className="text-muted hidden sm:block text-xs truncate" title={album.artist_name}>
+                        {album.artist_name}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* Track count */}
+                  <td className="py-2.5 hidden sm:table-cell text-muted tabular-nums">
+                    {album.track_count || '—'}
+                  </td>
+
+                  {/* Format */}
+                  <td className="py-2.5 hidden md:table-cell text-muted">
+                    {'—'}
+                  </td>
+
+                  {/* Size */}
+                  <td className="py-2.5 hidden lg:table-cell text-muted tabular-nums">
+                    {'—'}
+                  </td>
+
+                  {/* Downloaded date */}
+                  <td className="py-2.5 hidden lg:table-cell text-muted">
+                    {album.downloaded_at ? formatDate(album.downloaded_at) : '—'}
+                  </td>
+
+                  {/* Actions */}
+                  <td className="py-2.5 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      {/* Missing tracks indicator */}
+                      <span
+                        className="text-amber-500 hover:text-amber-600 cursor-pointer p-1"
+                        title="Check MusicBrainz for missing tracks"
+                        onClick={() => onAlbumClick(album)}
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" />
+                      </span>
+                      {/* View detail */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onAlbumClick(album)}
+                        className="text-xs"
+                      >
+                        View
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

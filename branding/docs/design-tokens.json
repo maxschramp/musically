@@ -1,0 +1,54 @@
+{
+  "color": {
+    "darkGreen":  { "value": "#2D4535", "usage": "primary brand color, logo, headings, dark surfaces" },
+    "sageGreen":  { "value": "#4B6E55", "usage": "secondary green, hover states" },
+    "coral":      { "value": "#FF7F6E", "usage": "primary accent / CTA / play / like" },
+    "purple":     { "value": "#A57DCD", "usage": "secondary accent / playlists / bookmarks" },
+    "offWhite":   { "value": "#F5F5F5", "usage": "default background" },
+    "lightGrey":  { "value": "#D0D0D0", "usage": "borders, disabled states" },
+    "white":      { "value": "#FFFFFF", "usage": "text on dark, icon strokes" }
+  },
+  "typography": {
+    "fontFamily": {
+      "heading": "'Poppins', 'Quicksand', sans-serif",
+      "body": "'Poppins', 'Nunito Sans', sans-serif"
+    },
+    "fontWeight": {
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    },
+    "fontSize": {
+      "display": "4rem",
+      "h1": "2rem",
+      "h2": "1.5rem",
+      "body": "1rem",
+      "small": "0.875rem"
+    },
+    "lineHeight": {
+      "heading": 1.2,
+      "body": 1.5
+    }
+  },
+  "radius": {
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px",
+    "pill": "999px"
+  },
+  "spacing": {
+    "1": "4px",
+    "2": "8px",
+    "3": "12px",
+    "4": "16px",
+    "5": "24px",
+    "6": "32px",
+    "7": "48px"
+  },
+  "shadow": {
+    "sm": "0 1px 3px rgba(45, 69, 53, 0.08)",
+    "md": "0 4px 16px rgba(45, 69, 53, 0.12)",
+    "lg": "0 8px 32px rgba(45, 69, 53, 0.16)"
+  }
+}

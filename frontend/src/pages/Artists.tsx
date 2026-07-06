@@ -4,6 +4,7 @@
 // ============================================
 
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, Search, ListMusic, Scan } from 'lucide-react';
 import { Card } from '@/components/shared/Card';
@@ -24,7 +25,7 @@ import type { Artist } from '@/types';
 interface SubscribeToggleProps {
   subscribed: boolean;
   loading: boolean;
-  onToggle: () => void;
+  onToggle: (e?: React.MouseEvent) => void;
 }
 
 function SubscribeToggle({ subscribed, loading, onToggle }: SubscribeToggleProps) {
@@ -58,6 +59,8 @@ interface ArtistRowProps {
 }
 
 function ArtistRow({ artist, onSubscriptionChanged }: ArtistRowProps) {
+  const navigate = useNavigate();
+
   const subscribeMutation = useMutation({
     mutationFn: () => apiClient.post<Artist>(`/artists/${artist.id}/subscribe`),
     onSuccess: onSubscriptionChanged,
@@ -70,7 +73,8 @@ function ArtistRow({ artist, onSubscriptionChanged }: ArtistRowProps) {
 
   const isToggling = subscribeMutation.isPending || unsubscribeMutation.isPending;
 
-  const handleToggle = useCallback(() => {
+  const handleToggle = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (artist.subscribed) {
       unsubscribeMutation.mutate();
     } else {
@@ -79,7 +83,13 @@ function ArtistRow({ artist, onSubscriptionChanged }: ArtistRowProps) {
   }, [artist.subscribed, subscribeMutation, unsubscribeMutation]);
 
   return (
-    <div className="flex items-center gap-4 py-3 px-4 rounded-sm hover:bg-soft-stone/50 transition-colors">
+    <div
+      className="flex items-center gap-4 py-3 px-4 rounded-sm hover:bg-soft-stone/50 transition-colors cursor-pointer"
+      onClick={() => navigate(`/artists/${artist.id}`)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/artists/${artist.id}`); } }}
+    >
       {/* Avatar placeholder */}
       <div className="w-10 h-10 rounded-full bg-soft-stone flex items-center justify-center shrink-0">
         <Users className="w-5 h-5 text-muted" />

@@ -29,6 +29,29 @@ from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
 
+# Supported audio file extensions for filesystem track counting
+MUSIC_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wma", ".wav", ".aiff", ".alac"}
+
+
+def _enrich_track_counts(albums: list[Album], lib_path: Path) -> None:
+    """Best-effort: count audio files in each album's folder on disk."""
+    for album in albums:
+        track_count = 0
+        for folder in [
+            lib_path / album.artist_name / album.title,
+            lib_path / f"{album.artist_name} - {album.title}",
+        ]:
+            if folder.is_dir():
+                try:
+                    track_count = sum(
+                        1 for f in folder.iterdir()
+                        if f.is_file() and f.suffix.lower() in MUSIC_EXTENSIONS
+                    )
+                    break
+                except (PermissionError, OSError):
+                    pass
+        album.track_count = track_count
+
 
 # ---------------------------------------------------------------------------
 # GET /albums — List library albums (downloaded only)
@@ -79,6 +102,50 @@ async def list_albums(
     else:
         sort_column = sort_column.asc()
 
+    # Resolve library path and supported extensions (used in both branches)
+    lib_stmt = select(Setting.value).where(Setting.key == "music_library_directory")
+    lib_result = await db.execute(lib_stmt)
+    lib_path = Path(lib_result.scalar() or "/music/library")
+
+    # -------------------------------------------------------------------
+    # When track-count filters are active, we must fetch ALL matching DB
+    # rows, enrich with filesystem track counts, filter in memory, and
+    # only then paginate.  Otherwise only a fraction of each DB page
+    # survives the filter, breaking pagination.
+    # -------------------------------------------------------------------
+    filter_by_tracks = min_tracks is not None or max_tracks is not None
+
+    if filter_by_tracks:
+        # Fetch all matching albums (no pagination)
+        result = await db.execute(stmt.order_by(sort_column))
+        albums = list(result.scalars().all())
+
+        # Enrich with track counts
+        _enrich_track_counts(albums, lib_path)
+
+        # Apply track-count filter
+        if min_tracks is not None:
+            albums = [a for a in albums if getattr(a, "track_count", 0) >= min_tracks]
+        if max_tracks is not None:
+            albums = [a for a in albums if getattr(a, "track_count", 0) <= max_tracks]
+
+        # Now paginate the filtered results
+        filtered_total = len(albums)
+        offset = (page - 1) * limit
+        page_albums = albums[offset : offset + limit]
+
+        return PaginatedResponse(
+            items=[AlbumResponse.model_validate(a) for a in page_albums],
+            total=filtered_total,
+            page=page,
+            page_size=limit,
+            total_pages=max(1, (filtered_total + limit - 1) // limit),
+        )
+
+    # -------------------------------------------------------------------
+    # No track-count filter — standard DB-level pagination
+    # -------------------------------------------------------------------
+
     # Apply pagination
     offset = (page - 1) * limit
     result = await db.execute(
@@ -86,37 +153,8 @@ async def list_albums(
     )
     albums = list(result.scalars().all())
 
-    # -------------------------------------------------------------------
     # Enrich with track counts from filesystem (best-effort)
-    # -------------------------------------------------------------------
-    lib_stmt = select(Setting.value).where(Setting.key == "music_library_directory")
-    lib_result = await db.execute(lib_stmt)
-    lib_path = Path(lib_result.scalar() or "/music/library")
-
-    music_exts = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wma", ".wav", ".aiff", ".alac"}
-
-    for album in albums:
-        track_count = 0
-        for folder in [
-            lib_path / album.artist_name / album.title,
-            lib_path / f"{album.artist_name} - {album.title}",
-        ]:
-            if folder.is_dir():
-                try:
-                    track_count = sum(
-                        1 for f in folder.iterdir()
-                        if f.is_file() and f.suffix.lower() in music_exts
-                    )
-                    break
-                except (PermissionError, OSError):
-                    pass
-        album.track_count = track_count
-
-    # Filter by track count (post-pagination, so totals are approximate)
-    if min_tracks is not None:
-        albums = [a for a in albums if getattr(a, "track_count", 0) >= min_tracks]
-    if max_tracks is not None:
-        albums = [a for a in albums if getattr(a, "track_count", 0) <= max_tracks]
+    _enrich_track_counts(albums, lib_path)
 
     total_pages = max(1, (total + limit - 1) // limit)
 

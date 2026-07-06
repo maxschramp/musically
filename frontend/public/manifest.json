@@ -1,0 +1,22 @@
+{
+  "name": "Musically",
+  "short_name": "Musically",
+  "description": "Self-hosted music library automation — download, tag, and organize your FLAC collection",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F5F5",
+  "theme_color": "#2D4535",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,55 +1,86 @@
 @import "tailwindcss";
 
 /* ============================================
-   Cohere Design Tokens — CSS Custom Properties
+   Musically Brand Design Tokens
+   Based on brand-guidelines.md — Dark Green + Coral + Poppins
    ============================================ */
 
 @theme {
-  /* Brand & Accent */
-  --color-primary: #17171c;
-  --color-cohere-black: #000000;
-  --color-ink: #212121;
-  --color-deep-green: #003c33;
-  --color-dark-navy: #071829;
-  --color-coral: #ff7759;
-  --color-coral-soft: #ffad9b;
+  /* ── Brand Palette ── */
+  --color-brand-dark: #2D4535;
+  --color-brand-sage: #4B6E55;
+  --color-brand-coral: #FF7F6E;
+  --color-brand-purple: #A57DCD;
+  --color-off-white: #F5F5F5;
+  --color-light-grey: #D0D0D0;
+  --color-white: #FFFFFF;
+
+  /* ── Semantic Aliases (backward-compatible with existing classes) ── */
+  --color-primary: var(--color-brand-dark);
+  --color-ink: var(--color-brand-dark);
+  --color-coral: var(--color-brand-coral);
+  --color-deep-green: var(--color-brand-dark);
+  --color-sage: var(--color-brand-sage);
+  --color-purple: var(--color-brand-purple);
+  --color-canvas: var(--color-white);
+  --color-soft-stone: var(--color-off-white);
+  --color-hairline: var(--color-light-grey);
+  --color-border-light: var(--color-light-grey);
+  --color-card-border: var(--color-light-grey);
+  --color-on-primary: var(--color-white);
+  --color-on-dark: var(--color-white);
+  --color-muted: var(--color-brand-sage);
+  --color-slate: #75758a;
+  --color-body-muted: var(--color-brand-sage);
+
+  /* ── Functional Colors (retained) ── */
   --color-action-blue: #1863dc;
   --color-focus-blue: #4c6ee6;
   --color-form-focus: #9b60aa;
   --color-error: #b30000;
-
-  /* Surface & Background */
-  --color-canvas: #ffffff;
-  --color-soft-stone: #eeece7;
+  --color-dark-navy: #1a2a1f;
   --color-pale-green: #edfce9;
   --color-pale-blue: #f1f5ff;
-  --color-card-border: #f2f2f2;
-  --color-hairline: #d9d9dd;
-  --color-border-light: #e5e7eb;
+  --color-cohere-black: #000000;
+  --color-coral-soft: #ffad9b;
 
-  /* Text */
-  --color-muted: #93939f;
-  --color-slate: #75758a;
-  --color-body-muted: #616161;
-  --color-on-primary: #ffffff;
-  --color-on-dark: #ffffff;
+  /* ── Typography ── */
+  --font-display: "Poppins", "Quicksand", "Nunito", ui-sans-serif, system-ui;
+  --font-ui: "Poppins", "Nunito Sans", ui-sans-serif, system-ui;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-body: "Poppins", "Nunito Sans", ui-sans-serif, system-ui;
 
-  /* Typography — Font Families */
-  --font-display: "CohereText", "Space Grotesk", "Inter", ui-sans-serif, system-ui;
-  --font-ui: "Unica77 Cohere Web", "Inter", "Arial", ui-sans-serif, system-ui;
-  --font-mono: "CohereMono", "Arial", ui-sans-serif, system-ui;
-
-  /* Border Radius */
+  /* ── Border Radius ── */
   --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 16px;
-  --radius-lg: 22px;
+  --radius-lg: 24px;
   --radius-xl: 30px;
-  --radius-pill: 32px;
+  --radius-pill: 999px;
   --radius-full: 9999px;
 
-  /* Spacing (extending Tailwind defaults) */
+  /* ── Spacing ── */
   --spacing-section: 80px;
+}
+
+/* ============================================
+   Dark Mode
+   Toggle via [data-theme="dark"] on <html>
+   ============================================ */
+
+[data-theme="dark"] {
+  --color-canvas: var(--color-brand-dark);
+  --color-soft-stone: #3a5342;
+  --color-hairline: rgba(255, 255, 255, 0.12);
+  --color-border-light: rgba(255, 255, 255, 0.16);
+  --color-card-border: rgba(255, 255, 255, 0.10);
+  --color-ink: var(--color-white);
+  --color-muted: rgba(255, 255, 255, 0.55);
+  --color-body-muted: rgba(255, 255, 255, 0.60);
+  --color-off-white: #253a2c;
+  --color-light-grey: #3a5342;
+  --color-slate: #8a8a9a;
+  --color-primary: var(--color-brand-dark);
 }
 
 /* ============================================
@@ -71,49 +102,103 @@ html {
 body {
   margin: 0;
   padding: 0;
-  font-family: var(--font-ui);
+  font-family: var(--font-body);
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
   color: var(--color-ink);
-  background-color: #fafafa;
+  background-color: var(--color-off-white);
+}
+
+[data-theme="dark"] body {
+  background-color: #1a2a1f;
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* CohereText — fallback to system serif */
+/* ============================================
+   Brand Decorative Elements
+   ============================================ */
+
+.brand-stripe {
+  background: linear-gradient(
+    90deg,
+    var(--color-brand-dark) 0%,
+    var(--color-brand-sage) 33%,
+    var(--color-brand-coral) 66%,
+    var(--color-brand-purple) 100%
+  );
+}
+
+/* ── Icon Chip (circular, per brand guidelines §4.1) ── */
+.icon-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+.icon-chip-sm { width: 36px; height: 36px; }
+.icon-chip-lg { width: 64px; height: 64px; }
+.icon-chip-dark   { background: var(--color-brand-dark); color: var(--color-white); }
+.icon-chip-sage   { background: var(--color-brand-sage); color: var(--color-white); }
+.icon-chip-coral  { background: var(--color-brand-coral); color: var(--color-white); }
+.icon-chip-purple { background: var(--color-brand-purple); color: var(--color-white); }
+.icon-chip-grey   { background: var(--color-light-grey); color: var(--color-ink); }
+
+/* ── SSE Indicator Dots ── */
+.coral-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-brand-coral);
+  box-shadow: 0 0 6px var(--color-brand-coral);
+}
+.muted-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-light-grey);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-light-grey); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
+
+/* ── Poppins font-face declarations ── */
 @font-face {
-  font-family: "CohereText";
-  src: local("CohereText"), local("Space Grotesk");
+  font-family: "Poppins";
+  src: local("Poppins"), local("Poppins Regular");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
-
-/* Unica77 Cohere Web — fallback chain */
 @font-face {
-  font-family: "Unica77 Cohere Web";
-  src: local("Unica77 Cohere Web"), local("Inter"), local("Arial");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Unica77 Cohere Web";
-  src: local("Unica77 Cohere Web"), local("Inter"), local("Arial");
+  font-family: "Poppins";
+  src: local("Poppins Medium"), local("Poppins");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
-
-/* CohereMono */
 @font-face {
-  font-family: "CohereMono";
-  src: local("CohereMono"), local("Arial");
-  font-weight: 400;
+  font-family: "Poppins";
+  src: local("Poppins SemiBold"), local("Poppins");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: local("Poppins Bold"), local("Poppins");
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }

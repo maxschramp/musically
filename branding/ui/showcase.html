@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>musically — Brand UI Showcase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components/buttons.css">
+<link rel="stylesheet" href="components/player.css">
+<link rel="stylesheet" href="components/cards.css">
+<style>
+  body { background: var(--color-bg); font-family: var(--font-body); color: var(--color-text); margin:0; padding: var(--space-7); }
+  h1 { font-size: var(--fs-display); margin: 0 0 var(--space-2); font-weight: var(--fw-semibold); }
+  .row { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; margin-bottom: var(--space-7); }
+  .palette-row { display:flex; gap: var(--space-3); }
+  .icon-grid { display: grid; grid-template-columns: repeat(4, 64px); gap: var(--space-3); }
+  .icon-grid img { width: 64px; height: 64px; }
+</style>
+</head>
+<body>
+
+  <h1>musically</h1>
+  <p style="color:var(--color-text-muted); margin-bottom: var(--space-7);">Brand UI element showcase — every component below pulls its color and type values from <code>tokens.css</code>.</p>
+
+  <div class="section-label">Color Palette</div>
+  <div class="palette-row" style="margin-bottom: var(--space-7);">
+    <div class="swatch" style="background: var(--color-dark-green);">Dark Green<br>#2D4535</div>
+    <div class="swatch" style="background: var(--color-sage-green);">Sage Green<br>#4B6E55</div>
+    <div class="swatch" style="background: var(--color-coral);">Orange-Coral<br>#FF7F6E</div>
+    <div class="swatch" style="background: var(--color-purple);">Purple<br>#A57DCD</div>
+    <div class="swatch on-light" style="background: var(--color-off-white); border:1px solid var(--color-border);">Off-White<br>#F5F5F5</div>
+    <div class="swatch on-light" style="background: var(--color-light-grey);">Light Grey<br>#D0D0D0</div>
+  </div>
+
+  <div class="section-label">Buttons</div>
+  <div class="row">
+    <button class="btn btn-primary">Button</button>
+    <button class="btn btn-secondary">Content</button>
+    <button class="btn btn-outline">Outline</button>
+    <button class="btn btn-accent">Follow</button>
+    <button class="btn btn-primary" disabled>Disabled</button>
+  </div>
+
+  <div class="section-label">Icon Buttons</div>
+  <div class="row">
+    <button class="icon-btn icon-btn-dark"><img src="../assets/icons/svg/waveform-dark.svg" style="width:22px"></button>
+    <button class="icon-btn icon-btn-sage"><img src="../assets/icons/svg/waveform-sage.svg" style="width:22px"></button>
+    <button class="icon-btn icon-btn-coral"><img src="../assets/icons/svg/play-coral.svg" style="width:22px"></button>
+    <button class="icon-btn icon-btn-purple"><img src="../assets/icons/svg/stack-purple.svg" style="width:22px"></button>
+    <button class="icon-btn icon-btn-coral"><img src="../assets/icons/svg/profile-coral.svg" style="width:22px"></button>
+    <button class="icon-btn icon-btn-purple"><img src="../assets/icons/svg/bookmark-purple.svg" style="width:22px"></button>
+    <button class="icon-btn" style="background:var(--color-off-white); border:1px solid var(--color-border);"><img src="../assets/icons/svg/queue-white.svg" style="width:22px"></button>
+    <button class="icon-btn icon-btn-grey"><img src="../assets/icons/svg/play-outline-grey.svg" style="width:22px"></button>
+  </div>
+
+  <div class="section-label">Now Playing Card</div>
+  <div class="row">
+    <div class="player-card dark">
+      <div class="player-header">
+        <div class="player-avatar"></div>
+        <div class="player-track-lines">
+          <div class="line" style="width:60%"></div>
+        </div>
+        <button class="player-more">&#8942;</button>
+      </div>
+      <div class="player-art">
+        <img src="../assets/logo/svg/icon-mark.svg" alt="musically mark">
+      </div>
+      <div class="feed-actions" style="border:none; padding:0; margin-bottom:16px; justify-content:flex-start; gap:32px;">
+      </div>
+      <div class="player-meta">
+        <div class="line wide"></div>
+        <div class="line mid"></div>
+      </div>
+      <div class="player-scrubber">
+        <div class="fill" style="width:70%;"></div>
+        <div class="thumb" style="left:70%;"></div>
+      </div>
+      <div class="player-transport">
+        <button class="icon-btn icon-btn-ghost size-sm">&#8646;</button>
+        <button class="icon-btn icon-btn-ghost">&#9198;</button>
+        <button class="icon-btn size-lg" style="background:var(--color-white); color:var(--color-dark-green);">&#9658;</button>
+        <button class="icon-btn icon-btn-ghost">&#9197;</button>
+        <button class="icon-btn icon-btn-ghost size-sm">&#8635;</button>
+      </div>
+    </div>
+
+    <div class="player-card light" style="max-width: 320px;">
+      <div class="player-header">
+        <div class="player-avatar"></div>
+        <div class="player-track-lines">
+          <div class="line" style="width:80%"></div>
+          <div class="line short"></div>
+        </div>
+        <button class="player-more">&#8942;</button>
+      </div>
+      <div class="player-scrubber" style="margin-top: -8px;">
+        <div class="fill" style="width:40%; background: var(--color-dark-green);"></div>
+        <div class="thumb" style="left:40%; background: var(--color-dark-green);"></div>
+      </div>
+      <div class="player-transport" style="margin-top:16px;">
+        <button class="icon-btn icon-btn-ghost size-sm">&#8646;</button>
+        <button class="icon-btn icon-btn-ghost">&#9198;</button>
+        <button class="icon-btn" style="background:var(--color-dark-green); color:white;">&#9658;</button>
+        <button class="icon-btn icon-btn-ghost">&#9197;</button>
+        <button class="icon-btn icon-btn-ghost size-sm">&#8635;</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Feed Card</div>
+  <div class="row">
+    <div class="feed-card">
+      <div class="feed-card-header">
+        <div class="feed-avatar coral"></div>
+        <div class="feed-lines">
+          <div class="line" style="width:65%"></div>
+          <div class="line short"></div>
+        </div>
+      </div>
+      <div class="feed-body">
+        <div class="line w-90"></div>
+        <div class="line w-70"></div>
+      </div>
+      <div class="feed-actions">
+        <button>&#9825; 128</button>
+        <button>&#128172; 12</button>
+        <button>&#10148; Share</button>
+      </div>
+    </div>
+
+    <div class="feed-card" style="max-width:280px;">
+      <div class="activity-row">
+        <div class="feed-avatar grey" style="width:36px;height:36px;"></div>
+        <div class="feed-lines"><div class="line" style="width:70%"></div></div>
+        <span class="heart">&#9829;</span>
+      </div>
+      <div class="activity-row">
+        <div class="feed-avatar coral" style="width:36px;height:36px;"></div>
+        <div class="feed-lines"><div class="line" style="width:55%"></div></div>
+        <span class="heart">&#9829;</span>
+      </div>
+      <div class="activity-row">
+        <div class="feed-avatar purple" style="width:36px;height:36px;"></div>
+        <div class="feed-lines"><div class="line" style="width:60%"></div></div>
+        <span class="heart muted">&#9829;</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Logo Lockups</div>
+  <div class="row" style="align-items:center;">
+    <img src="../assets/logo/svg/logo-full-color.svg" style="height:60px;">
+    <div style="background:var(--color-dark-green); padding:16px 24px; border-radius:12px;">
+      <img src="../assets/logo/svg/logo-full-white.svg" style="height:60px;">
+    </div>
+    <img src="../assets/logo/svg/icon-square.svg" style="height:80px;">
+  </div>
+
+</body>
+</html>

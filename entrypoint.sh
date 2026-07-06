@@ -116,7 +116,7 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
     HTTPS_STATUS="enabled (port 443)"
 fi
 
-cat << "BOOTEOF"
+cat << BOOTEOF
 
 
   ╔══════════════════════════════════════════════════════════════════╗

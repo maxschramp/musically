@@ -1,0 +1,117 @@
+/* musically — Now Playing / Player components
+   Requires tokens.css to be loaded first. */
+
+.player-card {
+  width: 100%;
+  max-width: 360px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  font-family: var(--font-body);
+  box-shadow: var(--shadow-md);
+}
+
+.player-card.light {
+  background: var(--color-white);
+  color: var(--color-dark-green);
+}
+
+.player-card.dark {
+  background: var(--color-dark-green);
+  color: var(--color-white);
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.player-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-light-grey);
+  flex-shrink: 0;
+}
+
+.player-track-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.player-track-lines .line {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  opacity: 0.85;
+}
+.player-track-lines .line.short { width: 55%; opacity: 0.35; }
+
+.player-more {
+  background: none;
+  border: none;
+  color: currentColor;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.player-art {
+  width: 100%;
+  aspect-ratio: 1.6 / 1;
+  border-radius: var(--radius-md);
+  background: var(--color-dark-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-5);
+}
+.player-card.dark .player-art {
+  background: rgba(255,255,255,0.08);
+}
+.player-art img { width: 96px; height: auto; }
+
+.player-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--space-4);
+}
+.player-meta .line { height: 8px; border-radius: var(--radius-pill); background: currentColor; opacity: 0.85; }
+.player-meta .line.wide { width: 100%; }
+.player-meta .line.mid { width: 70%; opacity: 0.5; }
+
+.player-scrubber {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(128,128,128,0.25);
+  margin-bottom: var(--space-5);
+  position: relative;
+}
+.player-scrubber .fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+.player-scrubber .thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.player-transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.player-transport .icon-btn-ghost svg { width: 18px; height: 18px; }

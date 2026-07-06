@@ -23,11 +23,11 @@ export function useInfiniteScroll<T>(
   const [items, setItems] = useState<T[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
-  const loaderRef = useRef<HTMLDivElement>(null);
 
   // Refs to avoid stale closures in the IntersectionObserver callback
   const hasMoreRef = useRef(hasMore);
   const isLoadingRef = useRef(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
   hasMoreRef.current = hasMore;
 
   const queryParams = { ...params, page, limit: pageSize };
@@ -50,7 +50,11 @@ export function useInfiniteScroll<T>(
       // New search/filter: replace items entirely
       setItems(data.items);
       setTotal(data.total);
-      setHasMore(data.items.length === pageSize && data.items.length < data.total);
+      // If we received items, there might be more — keep going until an
+      // empty page signals exhaustion.  This handles post-pagination
+      // server-side filtering (e.g. track-count chips) where a page may
+      // return fewer than pageSize items.
+      setHasMore(data.items.length > 0);
       return;
     }
 
@@ -64,39 +68,55 @@ export function useInfiniteScroll<T>(
 
       // Update total and hasMore based on accumulated state
       setTotal(data.total);
-      setHasMore(
-        data.items.length === pageSize && accumulated.length < data.total,
-      );
+      setHasMore(data.items.length > 0);
 
       return accumulated;
     });
   }, [data, page, pageSize]);
 
-  // Intersection Observer for scroll detection.
-  // Only depends on hasMore and threshold — NOT isLoading, because:
-  // - isLoadingRef is always current (set during render, before effects)
-  // - hasMoreRef is always current (set during render, before effects)
-  // - Recreating the observer on every load toggle can cause missed intersections
+  // Callback ref: fires every time the sentinel <div> mounts or unmounts.
+  // This guarantees the IntersectionObserver is always attached to a live
+  // DOM node, regardless of whether hasMore changed value or not.
+  const loaderRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      // Clean up any previous observer
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+
+      if (!node || !hasMoreRef.current) return;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (
+            entries[0]?.isIntersecting &&
+            hasMoreRef.current &&
+            !isLoadingRef.current
+          ) {
+            setPage((p) => p + 1);
+          }
+        },
+        { rootMargin: `0px 0px ${threshold}px 0px` },
+      );
+
+      observer.observe(node);
+      observerRef.current = observer;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [threshold],
+  );
+
+  // When threshold changes, re-attach observer to current node if any.
+  // We also clean up on unmount.
   useEffect(() => {
-    const loader = loaderRef.current;
-    if (!loader || !hasMore) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (
-          entries[0]?.isIntersecting &&
-          hasMoreRef.current &&
-          !isLoadingRef.current
-        ) {
-          setPage((p) => p + 1);
-        }
-      },
-      { rootMargin: `0px 0px ${threshold}px 0px` },
-    );
-
-    observer.observe(loader);
-    return () => observer.disconnect();
-  }, [hasMore, threshold]);
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
+  }, []);
 
   const reset = useCallback(() => {
     setPage(1);
