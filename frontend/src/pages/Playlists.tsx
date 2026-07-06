@@ -4,12 +4,13 @@
 // ============================================
 
 import { useState, useMemo, useCallback } from 'react';
-import { ListMusic, Loader2 } from 'lucide-react';
+import { ListMusic, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useApiQuery } from '@/hooks/useApi';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { apiClient } from '@/api/client';
 import { Card } from '@/components/shared/Card';
+import { Button } from '@/components/shared/Button';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageLoading } from '@/components/shared/LoadingSpinner';
@@ -64,6 +65,7 @@ const TYPE_DOT: Record<Playlist['playlist_type'], string> = {
 
 export function Playlists() {
   const [activeTab, setActiveTab] = useState<PlaylistTab>('all');
+  const [refreshing, setRefreshing] = useState(false);
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
@@ -72,6 +74,37 @@ export function Playlists() {
     '/playlists',
     { limit: 200 },
   );
+
+  // Spotify connection status
+  const { data: spotifyStatus } = useApiQuery<{
+    configured: boolean;
+    enabled: boolean;
+    authorized: boolean;
+    token_expired: boolean;
+    token_expiry: string | null;
+    last_synced_at: string | null;
+    total_playlists: number;
+    active_playlists: number;
+  }>(
+    ['spotify-status'],
+    '/spotify/status',
+    undefined,
+    { refetchInterval: 60_000 }, // refresh every minute
+  );
+
+  // Manual playlist refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await apiClient.post('/playlists/refresh');
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      queryClient.invalidateQueries({ queryKey: ['spotify-status'] });
+    } catch {
+      // error handled by the status banner
+    } finally {
+      setRefreshing(false);
+    }
+  }, [queryClient]);
 
   // Toggle playlist active state with optimistic update
   const toggleMutation = useMutation({
@@ -149,6 +182,47 @@ export function Playlists() {
   return (
     <div className="space-y-6">
       <TabBar activeTab={activeTab} onTabChange={handleTabChange} />
+
+      {/* Spotify connection status banner */}
+      {spotifyStatus && (
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-sm text-sm ${
+          spotifyStatus.authorized && !spotifyStatus.token_expired
+            ? 'bg-brand-sage/10 border border-brand-sage/20'
+            : spotifyStatus.configured
+              ? 'bg-yellow-50 border border-yellow-200'
+              : 'bg-soft-stone border border-hairline'
+        }`}>
+          {spotifyStatus.authorized && !spotifyStatus.token_expired ? (
+            <CheckCircle2 className="w-4 h-4 text-brand-sage shrink-0" />
+          ) : spotifyStatus.configured ? (
+            <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-muted shrink-0" />
+          )}
+          <span className="flex-1 text-ink">
+            {!spotifyStatus.configured
+              ? 'Spotify not configured. Add your Client ID and Secret in Settings.'
+              : !spotifyStatus.authorized
+                ? 'Spotify configured but not authorized. Click "Connect Spotify" in Settings.'
+                : spotifyStatus.token_expired
+                  ? 'Spotify token expired. Re-authorize in Settings to resume sync.'
+                  : spotifyStatus.last_synced_at
+                    ? `Spotify connected · last synced ${formatRelativeTime(spotifyStatus.last_synced_at)}`
+                    : 'Spotify connected · not yet synced'}
+          </span>
+          {spotifyStatus.authorized && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              loading={refreshing}
+              leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+            >
+              Refresh
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Bulk toggle controls */}
       {filteredItems.length > 0 && (

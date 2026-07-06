@@ -28,6 +28,75 @@ SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_URL = "https://api.spotify.com/v1"
 
 
+# ---------------------------------------------------------------------------
+# GET /spotify/status — Connection health check
+# ---------------------------------------------------------------------------
+@router.get("/spotify/status")
+async def spotify_status(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return Spotify connection state: configured, authorized, last sync.
+
+    Does NOT make any external API calls — reads from the local DB only.
+    Use POST /spotify/test to verify live credentials.
+    """
+    from sqlalchemy import func
+    from app.models.playlist import Playlist
+
+    # Read all relevant settings
+    keys = [
+        "spotify_client_id", "spotify_client_secret",
+        "spotify_refresh_token", "spotify_access_token_encrypted",
+        "spotify_token_expiry", "spotify_enabled",
+    ]
+    stmt = select(Setting).where(Setting.key.in_(keys))
+    rows = await db.execute(stmt)
+    settings_map: dict[str, str] = {s.key: s.value for s in rows.scalars().all()}
+
+    has_credentials = bool(
+        settings_map.get("spotify_client_id", "")
+        and settings_map.get("spotify_client_secret", "")
+    )
+    enabled = settings_map.get("spotify_enabled", "true").lower() == "true"
+
+    has_refresh = bool(settings_map.get("spotify_refresh_token", ""))
+    has_access = bool(settings_map.get("spotify_access_token_encrypted", ""))
+
+    token_expiry: str | None = None
+    token_expired: bool = False
+    expiry_str = settings_map.get("spotify_token_expiry", "")
+    if expiry_str:
+        token_expiry = expiry_str
+        try:
+            exp = datetime.fromisoformat(expiry_str)
+            token_expired = datetime.now(timezone.utc) > exp
+        except (ValueError, TypeError):
+            pass
+
+    # Last sync time = most recent playlist last_synced_at
+    last_synced_stmt = select(func.max(Playlist.last_synced_at))
+    last_synced_result = await db.execute(last_synced_stmt)
+    last_synced = last_synced_result.scalar()
+
+    # Playlist counts
+    total_stmt = select(func.count(Playlist.id))
+    total_count = (await db.execute(total_stmt)).scalar() or 0
+
+    active_stmt = select(func.count(Playlist.id)).where(Playlist.is_active == True)
+    active_count = (await db.execute(active_stmt)).scalar() or 0
+
+    return {
+        "configured": has_credentials,
+        "enabled": enabled,
+        "authorized": has_refresh and has_access,
+        "token_expired": token_expired,
+        "token_expiry": token_expiry.isoformat() if token_expiry else None,
+        "last_synced_at": last_synced.isoformat() if last_synced else None,
+        "total_playlists": total_count,
+        "active_playlists": active_count,
+    }
+
+
 @router.post("/spotify/test")
 async def test_spotify_connection(
     db: AsyncSession = Depends(get_db),
