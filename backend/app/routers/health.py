@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -12,18 +13,45 @@ from app.schemas.common import StatsResponse
 
 router = APIRouter()
 
+# Possible paths for the VERSION file (Docker, local dev, etc.)
+_VERSION_PATHS = [
+    Path("/app/VERSION"),
+    Path("VERSION"),
+    Path(__file__).resolve().parent.parent.parent.parent / "VERSION",
+]
+
+
+def _read_version() -> str:
+    """Read version from env or VERSION file, with fallback chain."""
+    # 1. Environment variable (set by Dockerfile ARG or docker-compose)
+    env_version = os.environ.get("VERSION", "")
+    if env_version and env_version != "0.0.0":
+        return env_version
+
+    # 2. VERSION file on disk
+    for path in _VERSION_PATHS:
+        try:
+            content = path.read_text().strip()
+            if content:
+                return content
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+
+    # 3. Fall back to env (even if "0.0.0") or hard default
+    return env_version or "0.0.0"
+
 
 @router.get("/health")
 async def health_check() -> dict:
     """Health check endpoint."""
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": _read_version()}
 
 
 @router.get("/health/version")
 async def get_version() -> dict:
     """Return the current application version and build info."""
     return {
-        "version": os.environ.get("VERSION", "0.0.0"),
+        "version": _read_version(),
         "build_date": os.environ.get("BUILD_DATE", "unknown"),
         "build_ref": os.environ.get("BUILD_REF", "dev"),
     }

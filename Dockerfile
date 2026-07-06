@@ -111,6 +111,9 @@ ENV BUILD_DATE=${BUILD_DATE}
 ENV BUILD_REF=${BUILD_REF}
 ENV VERSION=${VERSION}
 
+# Copy VERSION file for runtime fallback
+COPY VERSION /app/VERSION
+
 # Copy backend application code
 COPY backend/ /app/
 WORKDIR /app
