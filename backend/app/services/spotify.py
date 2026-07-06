@@ -510,9 +510,11 @@ class SpotifyService:
         # 2. Fetch all user playlists
         try:
             playlists = await self.get_user_playlists(db)
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to fetch Spotify playlists.")
-            return result
+            raise ValueError(
+                f"Failed to fetch Spotify playlists: {exc}"
+            ) from exc
 
         result.playlists_synced = len(playlists)
 

@@ -90,7 +90,7 @@ async def spotify_status(
         "enabled": enabled,
         "authorized": has_refresh and has_access,
         "token_expired": token_expired,
-        "token_expiry": token_expiry.isoformat() if token_expiry else None,
+        "token_expiry": token_expiry if token_expiry else None,
         "last_synced_at": last_synced.isoformat() if last_synced else None,
         "total_playlists": total_count,
         "active_playlists": active_count,
