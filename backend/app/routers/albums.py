@@ -123,6 +123,9 @@ async def list_albums(
         # Enrich with track counts
         _enrich_track_counts(albums, lib_path)
 
+        # Remove albums with no files on disk
+        albums = [a for a in albums if getattr(a, "track_count", 0) > 0]
+
         # Apply track-count filter
         if min_tracks is not None:
             albums = [a for a in albums if getattr(a, "track_count", 0) >= min_tracks]
@@ -156,11 +159,21 @@ async def list_albums(
     # Enrich with track counts from filesystem (best-effort)
     _enrich_track_counts(albums, lib_path)
 
-    total_pages = max(1, (total + limit - 1) // limit)
+    # Remove albums with no files on disk
+    before = len(albums)
+    albums = [a for a in albums if getattr(a, "track_count", 0) > 0]
+    removed = before - len(albums)
+
+    # Adjust total to exclude albums with missing files
+    # This is a heuristic — we subtract removed from this page, which is
+    # approximately correct for large libraries
+    adjusted_total = max(0, total - removed) if removed > 0 else total
+
+    total_pages = max(1, (adjusted_total + limit - 1) // limit)
 
     return PaginatedResponse(
         items=[AlbumResponse.model_validate(a) for a in albums],
-        total=total,
+        total=adjusted_total,
         page=page,
         page_size=limit,
         total_pages=total_pages,
@@ -674,6 +687,53 @@ async def get_album(
     if album is None:
         raise HTTPException(status_code=404, detail=f"Album {album_id} not found")
     return AlbumResponse.model_validate(album)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /albums/{id} — Delete a single album
+# ---------------------------------------------------------------------------
+
+@router.delete("/albums/{album_id}")
+async def delete_album(
+    album_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a single album from the library.
+
+    Removes the DB record and deletes files from disk.
+    """
+    album = await db.get(Album, album_id)
+    if album is None:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    errors: list[str] = []
+
+    # Delete files from disk
+    lib_stmt = select(Setting.value).where(Setting.key == "music_library_directory")
+    lib_result = await db.execute(lib_stmt)
+    lib_path = Path(lib_result.scalar() or "/music/library")
+
+    for folder in [
+        lib_path / album.artist_name / album.title,
+        lib_path / f"{album.artist_name} - {album.title}",
+    ]:
+        if folder.is_dir():
+            try:
+                shutil.rmtree(str(folder))
+                logger.info("Deleted album folder: %s", folder)
+            except Exception as e:
+                errors.append(f"Failed to delete files: {e}")
+
+    await db.delete(album)
+    await db.commit()
+
+    return {
+        "deleted": True,
+        "album_id": str(album_id),
+        "title": album.title,
+        "artist": album.artist_name,
+        "errors": errors,
+    }
 
 
 # ---------------------------------------------------------------------------

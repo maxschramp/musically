@@ -299,6 +299,12 @@ export function Settings() {
     '/spotify/auth/disconnect',
   );
 
+  // Purge queue below swipe threshold
+  const purgeQueueMutation = useApiMutation<{ removed: number; threshold: number }>(
+    'POST',
+    '/queue/purge-below-threshold',
+  );
+
   const [spotifyConnecting, setSpotifyConnecting] = useState(false);
   const popupRef = useRef<Window | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -600,14 +606,36 @@ export function Settings() {
         {openCategories.has('thresholds') && (
           <div className="mt-4 ml-8 divide-y divide-card-border">
             {grouped['thresholds']?.map((s) => (
-              <TextField
-                key={s.key}
-                label={s.key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                description={s.description}
-                value={getValue(s.key, s.value)}
-                onChange={(v) => setValue(s.key, v)}
-                type="number"
-              />
+              <div key={s.key}>
+                <TextField
+                  label={s.key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  description={s.description}
+                  value={getValue(s.key, s.value)}
+                  onChange={(v) => setValue(s.key, v)}
+                  type="number"
+                />
+                {s.key === 'swipe_min_track_count' && (
+                  <div className="pb-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      loading={purgeQueueMutation.isPending}
+                      onClick={() => {
+                        purgeQueueMutation.mutate(undefined, {
+                          onSuccess: (data) => {
+                            showToast(`Removed ${data.removed} album(s) below ${data.threshold}-track threshold.`, 'success');
+                          },
+                          onError: () => {
+                            showToast('Failed to purge queue.', 'error');
+                          },
+                        });
+                      }}
+                    >
+                      Remove albums from queue below this threshold
+                    </Button>
+                  </div>
+                )}
+              </div>
             ))}
             <div className="pt-4">
               <Button

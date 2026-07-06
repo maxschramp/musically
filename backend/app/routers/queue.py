@@ -652,3 +652,50 @@ async def clear_stalled(db: AsyncSession = Depends(get_db)) -> dict:
         await db.delete(album)
     await db.commit()
     return {"cleared": count, "message": f"Cleared {count} stalled album(s)"}
+
+
+# ---------------------------------------------------------------------------
+# POST /queue/purge-below-threshold
+# ---------------------------------------------------------------------------
+@router.post("/queue/purge-below-threshold")
+async def purge_below_threshold(db: AsyncSession = Depends(get_db)) -> dict:
+    """Remove queued albums whose track count is below swipe_min_track_count.
+
+    Reads the swipe_min_track_count setting, then deletes all queued
+    albums with fewer tracks.  Returns the count of removed albums.
+    """
+    # Read threshold
+    min_tracks_str = await db.scalar(
+        select(Setting.value).where(Setting.key == "swipe_min_track_count")
+    )
+    try:
+        min_tracks = int(min_tracks_str) if min_tracks_str else 3
+    except (ValueError, TypeError):
+        min_tracks = 3
+
+    # Find queued albums (any type) and check track counts via PlaylistTrack
+    albums_result = await db.execute(
+        select(Album).where(Album.status == AlbumStatus.QUEUED)
+    )
+    queued = albums_result.scalars().all()
+
+    removed = 0
+    for album in queued:
+        count_result = await db.execute(
+            select(func.count(PlaylistTrack.id)).where(
+                func.lower(PlaylistTrack.artist_name) == func.lower(album.artist_name),
+                func.lower(PlaylistTrack.album_name) == func.lower(album.title),
+            )
+        )
+        track_count = count_result.scalar() or 0
+
+        if track_count < min_tracks:
+            await db.delete(album)
+            removed += 1
+
+    await db.commit()
+    return {
+        "removed": removed,
+        "threshold": min_tracks,
+        "message": f"Removed {removed} queued album(s) below {min_tracks}-track threshold.",
+    }
