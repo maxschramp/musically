@@ -453,3 +453,35 @@ async def trigger_spotify_sync(db: AsyncSession = Depends(get_db)) -> dict:
         "discover": result.discover,
         "other": result.other,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /spotify/auth/disconnect — Clear OAuth tokens
+# ---------------------------------------------------------------------------
+@router.post("/spotify/auth/disconnect")
+async def spotify_disconnect(db: AsyncSession = Depends(get_db)) -> dict:
+    """Clear all stored Spotify OAuth tokens.
+
+    Does NOT revoke tokens at Spotify (the user should do that at
+    https://www.spotify.com/account/apps/ if desired).  This simply
+    removes the encrypted tokens from the local database so Musically
+    stops accessing the user's Spotify account.
+    """
+    token_keys = [
+        "spotify_access_token_encrypted",
+        "spotify_refresh_token",
+        "spotify_token_expiry",
+        "spotify_pkce_verifier",
+        "spotify_pkce_state",
+        "spotify_pkce_redirect_uri",
+    ]
+
+    for key in token_keys:
+        stmt = select(Setting).where(Setting.key == key)
+        result = await db.execute(stmt)
+        setting = result.scalar()
+        if setting:
+            setting.value = ""
+
+    await db.commit()
+    return {"success": True, "message": "Spotify tokens cleared."}
