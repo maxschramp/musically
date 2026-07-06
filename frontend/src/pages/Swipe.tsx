@@ -64,8 +64,8 @@ export function Swipe() {
   const SWIPE_PAGE_SIZE = 200; // backend max — load as many as possible at once
 
   const queryParams = queueMode === 'all'
-    ? { status: 'queued', type: 'auto', limit: SWIPE_PAGE_SIZE, sort: '-created_at', page }
-    : { status: 'queued', type: 'manual', limit: SWIPE_PAGE_SIZE, sort: '-created_at', page };
+    ? { status: 'queued', type: 'auto', swipe: true, limit: SWIPE_PAGE_SIZE, sort: '-created_at', page }
+    : { status: 'queued', type: 'manual', swipe: true, limit: SWIPE_PAGE_SIZE, sort: '-created_at', page };
 
   const { data, isLoading, isError, refetch } = useApiQuery<PaginatedResponse<Album>>(
     ['queue', 'swipe', queueMode, page],

@@ -170,6 +170,7 @@ def _album_to_response(album: Album) -> AlbumResponse:
 async def list_queue(
     status: str | None = Query(None, description="Filter by album status"),
     type: str | None = Query(None, description="Filter by queue type"),
+    swipe: bool = Query(False, description="Apply swipe_min_track_count filter (for Swipe review page)"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=200, description="Items per page"),
     sort: str = Query("created_at", description="Sort field"),
@@ -180,6 +181,7 @@ async def list_queue(
     Supports filtering by:
       - status: queued, downloading, downloaded, stalled, rejected
       - type: auto, manual, watch_folder
+      - swipe: when true, filters out albums below swipe_min_track_count
 
     Results are sorted by created_at (default, newest last).
     Use sort=-created_at for reverse order.
@@ -251,12 +253,12 @@ async def list_queue(
         setattr(album, 'track_count', count_result.scalar() or 0)
 
     # -------------------------------------------------------------------
-    # When querying manual queue items (used by the Swipe page), apply
-    # the swipe_min_track_count threshold.  Singles and very short EPs
+    # When explicitly requested (swipe=true), apply the
+    # swipe_min_track_count threshold.  Singles and very short EPs
     # are filtered out to keep the swipe review queue focused on
-    # full-length releases.
+    # full-length releases.  NOT applied to regular Queue page queries.
     # -------------------------------------------------------------------
-    if type == 'manual':
+    if swipe:
         min_tracks = await _get_setting_int_from_db(db, "swipe_min_track_count", 4)
         before = len(albums)
         albums = [a for a in albums if getattr(a, 'track_count', 0) >= min_tracks]
