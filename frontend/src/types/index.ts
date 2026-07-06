@@ -69,11 +69,15 @@ export interface PaginatedResponse<T> {
 
 export interface Stats {
   total_albums: number;
+  total_tracks: number;
+  total_artists: number;
   queued_count: number;
+  downloading_count: number;
   downloaded_count: number;
   stalled_count: number;
+  rejected_count: number;
   subscribed_artists: number;
-  total_track_plays: number;
+  watch_folder_pending: number;
 }
 
 // ============================================
@@ -182,19 +186,68 @@ export type SearchType = 'album' | 'artist';
 export interface SearchResult {
   source: SearchSource;
   type: SearchType;
-  artist_name: string;
-  title?: string;
+  artist_name: string | null;
+  title?: string | null;
+  /** Artist name (when type=artist) — from backend `name` field */
+  name?: string | null;
+  /** Unified MBID (used for both album and artist results from backend) */
+  mbid?: string | null;
+  /** @deprecated Use `mbid` — kept for backward compat */
   album_mbid?: string | null;
+  /** @deprecated Use `mbid` — kept for backward compat */
   artist_mbid?: string | null;
+  spotify_id?: string | null;
+  qobuz_id?: string | null;
+  year?: number | null;
   in_library: boolean;
   in_queue: boolean;
 }
 
 export interface SearchResponse {
   query: string;
-  type: SearchType;
-  sources: SearchSource[];
   results: SearchResult[];
+  warnings?: string[];
+  /** @deprecated Not returned by backend — kept for backward compat */
+  type?: SearchType;
+  /** @deprecated Not returned by backend — kept for backward compat */
+  sources?: SearchSource[];
+}
+
+// ============================================
+// Artist Discography Types
+// ============================================
+
+export type ReleaseTypeFilter = 'all' | 'album' | 'ep' | 'single' | 'compilation' | 'live' | 'other';
+export type DiscographySortOption = 'year' | 'title' | 'type';
+
+export interface MbTrackInfo {
+  position: number;
+  title: string;
+  length_ms: number;
+  id: string;
+}
+
+export interface MbReleaseLookup {
+  id: string;
+  title: string;
+  date?: string;
+  country?: string;
+  status?: string;
+  'release-group'?: {
+    'primary-type'?: string;
+    'secondary-types'?: string[];
+  };
+  'label-info'?: Array<{
+    label?: { name?: string };
+  }>;
+  media?: Array<{
+    tracks?: Array<{
+      position: number;
+      title: string;
+      length?: number;
+      recording?: { id: string; title: string; length?: number };
+    }>;
+  }>;
 }
 
 // ============================================
