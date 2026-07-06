@@ -167,6 +167,10 @@ export interface DatabaseTable {
   row_count: number;
 }
 
+export interface DatabaseTablesResponse {
+  tables: DatabaseTable[];
+}
+
 export interface DatabaseTableRows {
   table_name: string;
   columns: string[];

@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { useApiQuery } from '@/hooks/useApi';
-import type { DatabaseTable, DatabaseTableRows } from '@/types';
+import type { DatabaseTable, DatabaseTablesResponse, DatabaseTableRows } from '@/types';
 
 // ============================================
 // Helpers
@@ -45,15 +45,17 @@ export function Database() {
 
   // Fetch table list
   const {
-    data: tables,
+    data: tablesResponse,
     isLoading: tablesLoading,
     isError: tablesError,
     error: tablesErr,
     refetch: refetchTables,
-  } = useApiQuery<DatabaseTable[]>(
+  } = useApiQuery<DatabaseTablesResponse>(
     ['database-tables'],
     '/database/tables',
   );
+
+  const tables: DatabaseTable[] = tablesResponse?.tables ?? [];
 
   // Fetch rows for selected table
   const {
