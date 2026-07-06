@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.models.album import Album, AlbumStatus
+from app.models.setting import Setting
 from app.schemas.search import SearchResponse, SearchResult
 from app.services.musicbrainz import MusicBrainzService
 from app.services.qobuz import QobuzService
@@ -31,7 +32,35 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — credential reading
+# ---------------------------------------------------------------------------
+
+SETTINGS_TO_LOAD = (
+    "spotify_client_id",
+    "spotify_client_secret",
+    "qobuz_email",
+    "qobuz_password_encrypted",
+)
+
+
+async def _load_creds_from_db(db: AsyncSession) -> dict[str, str]:
+    """Read Spotify and Qobuz credentials from the Settings table."""
+    from app.services.spotify import _decrypt_token
+
+    stmt = select(Setting).where(Setting.key.in_(SETTINGS_TO_LOAD))
+    rows = await db.execute(stmt)
+    raw: dict[str, str] = {s.key: s.value for s in rows.scalars().all()}
+
+    return {
+        "spotify_client_id": raw.get("spotify_client_id", ""),
+        "spotify_client_secret": raw.get("spotify_client_secret", ""),
+        "qobuz_email": raw.get("qobuz_email", ""),
+        "qobuz_password": _decrypt_token(raw.get("qobuz_password_encrypted", "")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Normalization helpers
 # ---------------------------------------------------------------------------
 
 
@@ -214,16 +243,16 @@ async def _search_musicbrainz(
 
 
 async def _search_spotify(
-    query: str, search_type: str
+    query: str, search_type: str, db: AsyncSession
 ) -> tuple[list[SearchResult], str | None]:
     """Search Spotify via client credentials; returns (results, warning_or_none)."""
-    settings = get_settings()
-    if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
+    creds = await _load_creds_from_db(db)
+    if not creds["spotify_client_id"] or not creds["spotify_client_secret"]:
         return [], "Spotify: client_id/client_secret not configured"
 
     svc = SpotifyService(
-        client_id=settings.SPOTIFY_CLIENT_ID,
-        client_secret=settings.SPOTIFY_CLIENT_SECRET,
+        client_id=creds["spotify_client_id"],
+        client_secret=creds["spotify_client_secret"],
     )
     try:
         type_map = {"album": "album", "artist": "artist", "both": "album,artist"}
@@ -239,21 +268,21 @@ async def _search_spotify(
 
 
 async def _search_qobuz(
-    query: str, search_type: str
+    query: str, search_type: str, db: AsyncSession
 ) -> tuple[list[SearchResult], str | None]:
     """Search Qobuz; returns (results, warning_or_none).
 
     Qobuz only supports album search, so artist/both types fall back to
     album search with a note.
     """
-    settings = get_settings()
-    if not settings.QOBUZ_EMAIL or not settings.QOBUZ_PASSWORD:
+    creds = await _load_creds_from_db(db)
+    if not creds["qobuz_email"] or not creds["qobuz_password"]:
         return [], "Qobuz: email/password not configured"
 
     try:
         svc = QobuzService(
-            email=settings.QOBUZ_EMAIL,
-            password=settings.QOBUZ_PASSWORD,
+            email=creds["qobuz_email"],
+            password=creds["qobuz_password"],
         )
     except ValueError as exc:
         return [], f"Qobuz: {exc}"
@@ -313,10 +342,10 @@ async def search(
             coros.append(_search_musicbrainz(query, search_type))
             source_names.append(f"musicbrainz{suffix}")
         if "spotify" in sources:
-            coros.append(_search_spotify(query, search_type))
+            coros.append(_search_spotify(query, search_type, db))
             source_names.append(f"spotify{suffix}")
         if "qobuz" in sources:
-            coros.append(_search_qobuz(query, search_type))
+            coros.append(_search_qobuz(query, search_type, db))
             source_names.append(f"qobuz{suffix}")
 
     # Primary search: full query as-is
@@ -390,16 +419,16 @@ async def _search_artist_albums_musicbrainz(
 
 
 async def _search_artist_albums_spotify(
-    artist_name: str,
+    artist_name: str, db: AsyncSession
 ) -> tuple[list[SearchResult], str | None]:
     """Search Spotify for albums by an artist."""
-    settings = get_settings()
-    if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
+    creds = await _load_creds_from_db(db)
+    if not creds["spotify_client_id"] or not creds["spotify_client_secret"]:
         return [], "Spotify: client_id/client_secret not configured"
 
     svc = SpotifyService(
-        client_id=settings.SPOTIFY_CLIENT_ID,
-        client_secret=settings.SPOTIFY_CLIENT_SECRET,
+        client_id=creds["spotify_client_id"],
+        client_secret=creds["spotify_client_secret"],
     )
     try:
         items = await svc.search(f'artist:"{artist_name}"', "album")
@@ -417,17 +446,17 @@ async def _search_artist_albums_spotify(
 
 
 async def _search_artist_albums_qobuz(
-    artist_name: str,
+    artist_name: str, db: AsyncSession
 ) -> tuple[list[SearchResult], str | None]:
     """Search Qobuz for albums by an artist."""
-    settings = get_settings()
-    if not settings.QOBUZ_EMAIL or not settings.QOBUZ_PASSWORD:
+    creds = await _load_creds_from_db(db)
+    if not creds["qobuz_email"] or not creds["qobuz_password"]:
         return [], "Qobuz: email/password not configured"
 
     try:
         svc = QobuzService(
-            email=settings.QOBUZ_EMAIL,
-            password=settings.QOBUZ_PASSWORD,
+            email=creds["qobuz_email"],
+            password=creds["qobuz_password"],
         )
     except ValueError as exc:
         return [], f"Qobuz: {exc}"
@@ -471,10 +500,10 @@ async def artist_albums(
         coros.append(_search_artist_albums_musicbrainz(artist_name))
         source_names.append("musicbrainz")
     if "spotify" in sources:
-        coros.append(_search_artist_albums_spotify(artist_name))
+        coros.append(_search_artist_albums_spotify(artist_name, db))
         source_names.append("spotify")
     if "qobuz" in sources:
-        coros.append(_search_artist_albums_qobuz(artist_name))
+        coros.append(_search_artist_albums_qobuz(artist_name, db))
         source_names.append("qobuz")
 
     if not coros:
